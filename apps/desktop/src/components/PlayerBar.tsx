@@ -58,10 +58,11 @@ export function PlayerBar() {
         <div class="scrub w-full relative h-[3px] group-hover:h-[5px] transition-all bg-white/15">
           <div class="scrub-buffered" style={{ width: `${playback.buffered * 100}%` }} />
           <div class="scrub-played" style={{ width: `${pct()}%` }} />
-          <div
-            class="scrub-knob absolute top-1/2 -translate-y-1/2 size-3.5 rounded-full bg-white shadow-lg transition-transform scale-0 group-hover:scale-100 pointer-events-none"
-            style={{ left: `${pct()}%` }}
-          />
+          {/* El sitio y el tamaño los pone `.scrub-knob`. Repetirlos aquí con
+              utilidades hacía que el desplazamiento se aplicara DOS veces —
+              `translate` de Tailwind y `transform` del CSS se suman — y la
+              bolita salía una altura por encima de la barra. */}
+          <div class="scrub-knob" style={{ left: `${pct()}%` }} />
         </div>
       </div>
 
@@ -75,13 +76,13 @@ export function PlayerBar() {
           <I.Prev size={19} />
         </button>
         <button
-          class="icon-btn size-10 rounded-full !opacity-100 bg-white text-black hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center justify-center"
+          class="icon-btn size-11 !opacity-100 rounded-full text-white hover:bg-white/10 active:scale-95 transition-all"
           onClick={() => api.togglePlay()}
-          title={playback.playing ? "Pause" : "Play"}
+          title={playback.playing ? "Pausar" : "Reproducir"}
         >
           <Show when={!playback.loading} fallback={<Spinner />}>
-            <Show when={playback.playing} fallback={<I.Play size={18} class="translate-x-[1px]" />}>
-              <I.Pause size={18} />
+            <Show when={playback.playing} fallback={<I.Play size={26} class="translate-x-[1px]" />}>
+              <I.Pause size={26} />
             </Show>
           </Show>
         </button>

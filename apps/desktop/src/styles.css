@@ -119,7 +119,7 @@ body {
 
   background-color: var(--c);
   /* El foco que mas superficie ocupa en la portada tambien manda en la ventana. */
-  opacity: calc(0.55 + var(--w) * 0.62);
+  opacity: calc(0.45 + var(--w) * 0.5);
   /* `screen` suma luz en vez de taparla: donde dos focos se cruzan sale un tercer
      color mas claro, que es lo que hace que la ventana parezca iluminada y no
      pintada. Con mezcla normal el resultado es plano y siempre mas oscuro que el
@@ -130,8 +130,66 @@ body {
   mask-image: radial-gradient(closest-side, #000 0%, rgb(0 0 0 / 0.78) 52%, transparent 100%);
 
   transition: background-color 900ms var(--ease), opacity 900ms var(--ease);
-  animation: ambient-drift 23s ease-in-out infinite alternate;
+  animation: ambient-drift 13s ease-in-out infinite alternate;
   will-change: transform;
+}
+
+/*
+ * La portada convertida en luz.
+ *
+ * # El truco: desenfocar en pequeno y ampliar despues
+ *
+ * La capa mide 320x180 px REALES y se amplia ~11 veces con `transform`. Eso
+ * importa porque el orden de pintado es: primero el filtro sobre el elemento a
+ * su tamanio de maquetacion, y despues la transformacion sobre el resultado ya
+ * rasterizado.
+ *
+ * Asi que `blur(9px)` sobre 320 px equivale a un desenfoque de ~100 px en
+ * pantalla, pero se calcula sobre una superficie 120 veces menor. Un
+ * `blur(100px)` directo sobre una capa a tamanio de ventana pinta cada
+ * fotograma y se nota; este no.
+ *
+ * Es la misma idea que ya estaba documentada en el README — pedir la portada
+ * diminuta y estirarla, porque el reescalado hace de desenfoque gratis — pero
+ * llevada hasta el final: con la imagen a tamanio de ventana quedaban las
+ * formas del original a la vista, y por eso hacia falta la vinieta que apagaba
+ * la ventana entera.
+ *
+ * La animacion mueve una imagen fija, no muestrea el video: por eso el efecto
+ * sigue vivo con la reproduccion en pausa, igual que en la referencia.
+ */
+.ambient-cover {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 320px;
+  height: 180px;
+  margin: -90px 0 0 -160px;
+
+  background-size: cover;
+  background-position: center;
+  filter: blur(9px) saturate(1.8) brightness(0.8);
+  opacity: 0.85;
+
+  transform-origin: 50% 50%;
+  animation: ambient-cover-drift 44s ease-in-out infinite alternate;
+  will-change: transform;
+  transition: opacity 900ms var(--ease);
+  pointer-events: none;
+}
+
+/*
+ * La escala minima tiene que cubrir la ventana mas grande que quepa: 320 px por
+ * 11 son 3520, y girada 8 grados sigue tapando una pantalla 4K de ancho. Si se
+ * quedara corta, asomaria el borde de la capa por una esquina.
+ */
+@keyframes ambient-cover-drift {
+  from {
+    transform: scale(11) rotate(-7deg) translate3d(-2%, -1.5%, 0);
+  }
+  to {
+    transform: scale(14) rotate(8deg) translate3d(3%, 2%, 0);
+  }
 }
 
 /*
@@ -153,7 +211,7 @@ body {
   background-color: var(--c2);
   opacity: 0;
   transition: background-color 900ms var(--ease);
-  animation: ambient-crossfade 53s ease-in-out infinite alternate;
+  animation: ambient-crossfade 31s ease-in-out infinite alternate;
   will-change: opacity;
 }
 
@@ -162,47 +220,47 @@ body {
     opacity: 0;
   }
   to {
-    opacity: 0.85;
+    opacity: 1;
   }
 }
 
 /* Periodos distintos del de la deriva y entre si: con dos ciclos por foco que
    no encajan, la ventana no vuelve a pasar dos veces por el mismo color. */
 .ambient-spot:nth-child(2) .ambient-spot-alt {
-  animation-duration: 67s;
+  animation-duration: 37s;
   animation-delay: -14s;
 }
 .ambient-spot:nth-child(3) .ambient-spot-alt {
-  animation-duration: 41s;
+  animation-duration: 26s;
   animation-delay: -31s;
 }
 .ambient-spot:nth-child(4) .ambient-spot-alt {
-  animation-duration: 59s;
+  animation-duration: 43s;
   animation-delay: -22s;
 }
 .ambient-spot:nth-child(5) .ambient-spot-alt {
-  animation-duration: 47s;
+  animation-duration: 34s;
   animation-delay: -8s;
 }
 
 /* Duraciones sin multiplos comunes para que los focos no vuelvan a alinearse:
    si coincidieran, la deriva se leeria como un latido. */
 .ambient-spot:nth-child(2) {
-  animation-duration: 29s;
+  animation-duration: 17s;
   animation-delay: -7s;
 }
 .ambient-spot:nth-child(3) {
-  animation-duration: 37s;
-  animation-delay: -19s;
+  animation-duration: 19s;
+  animation-delay: -11s;
   animation-direction: alternate-reverse;
 }
 .ambient-spot:nth-child(4) {
-  animation-duration: 31s;
+  animation-duration: 23s;
   animation-delay: -12s;
   animation-direction: alternate-reverse;
 }
 .ambient-spot:nth-child(5) {
-  animation-duration: 43s;
+  animation-duration: 29s;
   animation-delay: -25s;
 }
 
@@ -221,11 +279,11 @@ body {
  */
 @keyframes ambient-drift {
   from {
-    transform: translate3d(-4%, -3%, 0) scale(1);
-    opacity: calc((0.55 + var(--w) * 0.62) * 0.5);
+    transform: translate3d(-13%, -10%, 0) scale(0.92);
+    opacity: calc((0.55 + var(--w) * 0.62) * 0.3);
   }
   to {
-    transform: translate3d(5%, 4%, 0) scale(1.14);
+    transform: translate3d(15%, 12%, 0) scale(1.34);
     opacity: calc(0.55 + var(--w) * 0.62);
   }
 }
@@ -403,14 +461,24 @@ body {
   transition: background 900ms var(--ease);
 }
 
+/*
+ * La bolita del progreso.
+ *
+ * Todo el posicionado vive aqui y no en utilidades del marcado. Tailwind v4
+ * compila `-translate-y-1/2` a la propiedad `translate`, que se SUMA a
+ * `transform`: puestos los dos, la bolita subia el doble y quedaba flotando
+ * sobre la barra en vez de centrada en ella.
+ */
 .scrub-knob {
   position: absolute;
   top: 50%;
-  width: 12px;
-  height: 12px;
-  margin-left: -6px;
+  width: 13px;
+  height: 13px;
+  /* La mitad del ancho, para que el centro caiga en el punto exacto. */
+  margin-left: -6.5px;
   border-radius: 50%;
   background: var(--fg);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
   transform: translateY(-50%) scale(0);
   transition: transform 160ms var(--ease);
   pointer-events: none;
@@ -484,8 +552,9 @@ body {
   /* La deriva del fondo es `infinite alternate`: acortarle la duracion no la
      para, la convierte en un parpadeo. Se apagan enteras. */
   .ambient-spot,
-  .ambient-spot-alt {
+  .ambient-spot-alt,
+  .ambient-cover {
     animation: none !important;
-    transform: none;
+    transform: scale(12);
   }
 }

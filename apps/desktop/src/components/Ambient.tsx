@@ -1,5 +1,6 @@
-import { Index } from "solid-js";
-import { palette } from "../lib/store";
+import { Index, Show } from "solid-js";
+import { palette, playback } from "../lib/store";
+import { thumbAt } from "../lib/api";
 
 /**
  * Fondo ambiental: la ventana entera iluminada con los colores de la portada.
@@ -41,11 +42,18 @@ export function Ambient() {
     SPOTS.map((spot, i) => ({
       spot,
       stop: palette().stops[i],
-      // El color del foco siguiente. La capa interior lo cruza con el propio,
-      // asi que la mezcla se mueve de tono y no solo de brillo. Con una sola
-      // parada se cruza consigo misma y no pasa nada, que es lo correcto.
-      next: palette().stops[(i + 1) % Math.max(palette().stops.length, 1)],
+      // El color con el que se cruza este foco. Se salta uno a proposito: las
+      // paradas vienen ordenadas por peso, asi que las contiguas suelen ser
+      // parecidas, y cruzar dos turquesas casi identicos no mueve nada. Con dos
+      // de distancia se cruza lo frio con lo calido de la portada, que es el
+      // vaiven que se ve en la referencia.
+      next: palette().stops[(i + 2) % Math.max(palette().stops.length, 1)],
     }));
+
+  // Se pide diminuta a proposito. Estirarla a varias veces la ventana ES el
+  // desenfoque, y sale gratis: el reescalado lo hace la GPU. Un `filter:blur()`
+  // sobre una imagen grande repinta cada fotograma.
+  const cover = () => thumbAt(playback.track?.thumbnail, 320, 180);
 
   return (
     <div class="ambient" aria-hidden="true">
@@ -66,6 +74,22 @@ export function Ambient() {
           </div>
         )}
       </Index>
+
+      {/*
+        La portada, borrosa y enorme, por encima de los focos.
+
+        Es lo que hace la referencia: el tono de su fondo coincide con la
+        carátula desenfocada con 16-25 grados de diferencia, mientras que
+        comparada con la carátula nítida se va a 78-94. Y sigue moviéndose con
+        la reproducción en pausa, así que no muestrea el vídeo: es una imagen
+        fija en movimiento lento.
+
+        Los focos de debajo no sobran: rellenan de color donde la portada es
+        oscura, y son lo único que queda cuando aún no hay carátula.
+      */}
+      <Show when={cover()}>
+        <div class="ambient-cover" style={{ "background-image": `url(${cover()})` }} />
+      </Show>
     </div>
   );
 }

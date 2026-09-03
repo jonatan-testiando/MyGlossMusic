@@ -129,12 +129,19 @@ redescubrir:
 - **itag 140 (AAC), no 251 (Opus).** Symphonia 0.6 sigue sin soportar Opus.
 - **La paleta se calcula en Oklab, no en RGB.** En RGB el k-means produce
   marrones sucios porque la distancia no se corresponde con lo que ve el ojo.
-- **El fondo no pinta la portada, pinta sus colores.** Estirar la miniatura
-  desenfocada deja las formas del original a la vista, y taparlas exige una
-  viñeta oscura que apaga toda la ventana. En su lugar `palette.rs` devuelve
-  `stops[]` y la interfaz pinta un foco radial por color. Sin imagen no hay
-  formas que tapar, así que no hace falta viñeta. También es más barato: no hay
-  `filter: blur()` repintando cada fotograma, solo transformaciones en la GPU.
+- **El fondo se desenfoca en pequeño y se amplía después.** La capa de la
+  portada mide 320×180 px reales y se escala ×11 con `transform`. El orden de
+  pintado es filtro primero, transformación después, así que `blur(9px)` sobre
+  320 px equivale a ~100 px en pantalla pero se calcula sobre una superficie 120
+  veces menor. Un `blur(100px)` a tamaño de ventana repinta cada fotograma; este
+  no. Sin este truco quedan las formas del original a la vista, y taparlas exige
+  una viñeta que apaga la ventana entera — que fue exactamente lo que pasó.
+- **Debajo de la portada van focos de color, no en vez de ella.** `palette.rs`
+  devuelve `stops[]` y la interfaz pinta un degradado radial por color. Rellenan
+  donde la portada es oscura y son lo único que queda cuando aún no hay
+  carátula. Medido contra la referencia: el tono de su fondo coincide con la
+  portada desenfocada con 16-25° de diferencia, y con la portada nítida se va a
+  78-94°, así que la imagen manda y los focos acompañan.
 - **Los focos del fondo llevan el color en `background-color` y el recorte en
   `mask-image`.** Con el degradado en `background` el color no transiciona y el
   cambio de canción corta en seco. Y son siempre cinco, aunque la portada dé
