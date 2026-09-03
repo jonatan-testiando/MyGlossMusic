@@ -435,7 +435,7 @@ pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "posible=info,ytm_source=info,ytm_audio=info".into()),
+                .unwrap_or_else(|_| "myglossmusic=info,ytm_source=info,ytm_audio=info".into()),
         )
         .with_target(false)
         .init();

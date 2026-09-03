@@ -47,8 +47,8 @@ pub fn init(app: &AppHandle, engine: Engine) {
     };
 
     let config = souvlaki::PlatformConfig {
-        display_name: "Posible",
-        dbus_name: "posible",
+        display_name: "MyGlossMusic",
+        dbus_name: "myglossmusic",
         hwnd,
     };
 

@@ -62,14 +62,14 @@ export function TitleBar() {
           onClick={() => {
             navegar({ view: "home" });
           }}
-          title="Posible Music"
+          title="MyGlossMusic"
         >
           <div class="size-7 rounded-full bg-[#ff0000] flex items-center justify-center shadow-[0_0_15px_rgba(255,0,0,0.5)]">
             <svg viewBox="0 0 24 24" class="size-4 fill-white translate-x-[1px]">
               <polygon points="6 4 18 12 6 20 6 4" />
             </svg>
           </div>
-          <span class="text-[19px] font-bold tracking-tight text-white font-sans">Music</span>
+          <span class="text-[19px] font-bold tracking-tight text-white font-sans">MyGloss<span class="text-white/70">Music</span></span>
         </div>
       </div>
 

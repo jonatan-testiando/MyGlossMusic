@@ -2523,6 +2523,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "myglossmusic"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dirs",
+ "discord-rich-presence",
+ "image",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "souvlaki",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "ytm-audio",
+ "ytm-source",
+]
+
+[[package]]
 name = "ndk"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3135,29 +3158,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a106d1259c23fac8e543272398ae0e3c0b8d33c88ed73d0cc71b0f1d902618"
 dependencies = [
  "portable-atomic",
-]
-
-[[package]]
-name = "posible"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "dirs",
- "discord-rich-presence",
- "image",
- "reqwest 0.12.28",
- "rusqlite",
- "serde",
- "serde_json",
- "souvlaki",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "ytm-audio",
- "ytm-source",
 ]
 
 [[package]]

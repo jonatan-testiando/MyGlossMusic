@@ -9,7 +9,7 @@
 #   ./scripts/harness-minimize.ps1 -Cycles 10 -Env POSIBLE_NO_SMTC=1
 #
 param(
-    [string]$Exe = "target/debug/posible.exe",
+    [string]$Exe = "target/debug/myglossmusic.exe",
     [string]$PlayId = "jig2aRZbHm4",
     [int]$Cycles = 10,
     [string[]]$Env = @()

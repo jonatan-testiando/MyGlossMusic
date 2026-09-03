@@ -1,6 +1,11 @@
-# Posible
+# MyGlossMusic
 
 Reproductor de YouTube Music nativo para escritorio. Rust + Tauri v2 + SolidJS.
+
+> El proyecto se llamaba **Posible**. El nombre visible cambió a MyGlossMusic;
+> las rutas de datos en disco (`posible-ytmusic/posible.db`) **no** se han
+> tocado a propósito, para no dejar huérfanos los favoritos y el historial de
+> quien ya lo tuviera instalado.
 
 Tres objetivos, por orden: **que no se rompa**, que sea bonito, que vaya rápido.
 
@@ -74,7 +79,7 @@ npm install     # solo la primera vez
 npm run tauri dev
 ```
 
-`npm run tauri dev` levanta Vite y la aplicación juntos. `cargo run -p posible`
+`npm run tauri dev` levanta Vite y la aplicación juntos. `cargo run -p myglossmusic`
 por su cuenta **no** basta: la app en modo desarrollo espera el servidor de Vite
 en el puerto 1420.
 
