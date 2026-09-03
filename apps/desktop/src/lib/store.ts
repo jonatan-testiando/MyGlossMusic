@@ -46,6 +46,37 @@ export const [fullLyricsOpen, setFullLyricsOpen] = createSignal(false);
 export const [playerViewOpen, setPlayerViewOpen] = createSignal(true);
 
 /**
+ * Barra lateral abierta o encogida a raíl de iconos.
+ *
+ * Lo decide el usuario con el botón de menú, no la vista. En la referencia el
+ * estado se conserva al navegar y mientras suena una canción; atarlo a la vista
+ * hacía que la barra se encogiera sola y dejara de servir para navegar.
+ */
+const SIDEBAR_KEY = "posible.sidebar-open";
+
+function readSidebarPref(): boolean {
+  // En un WebView con el almacenamiento capado esto lanza; abierta es el
+  // estado que espera alguien que abre la app por primera vez.
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+export const [sidebarOpen, setSidebarOpen] = createSignal(readSidebarPref());
+
+export function toggleSidebar() {
+  const next = !sidebarOpen();
+  setSidebarOpen(next);
+  try {
+    localStorage.setItem(SIDEBAR_KEY, next ? "1" : "0");
+  } catch {
+    // Sin persistencia se pierde entre sesiones, pero la sesión actual funciona.
+  }
+}
+
+/**
  * Posicion local interpolada.
  *
  * El backend publica cada 100 ms, que basta para no desincronizarse, pero una

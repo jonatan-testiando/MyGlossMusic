@@ -121,9 +121,6 @@ export function PlayerBar() {
           </div>
           <div class="truncate text-[11.5px] text-white/55 font-medium mt-0.5">
             {playback.track?.author ?? ""}
-            <Show when={playback.track}>
-              <span> • 5.9 M de vistas • 67 k me gusta</span>
-            </Show>
           </div>
         </div>
 

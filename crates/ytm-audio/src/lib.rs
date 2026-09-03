@@ -462,10 +462,21 @@ impl Inner {
 
         // Metadatos: InnerTube primero, yt-dlp de respaldo.
         if track.title.is_none() {
-            if let Some(r) = &resolved {
+            let backfilled = if let Some(r) = &resolved {
                 self.queue.set_current_meta(r.track.clone());
+                true
             } else if let Some(m) = &prepared.meta {
                 self.queue.set_current_meta(m.clone());
+                true
+            } else {
+                false
+            };
+            // Rellenar los metadatos cambia el CONTENIDO de la cola, asi que
+            // hay que subir la revision. Sin esto la interfaz, que descarta la
+            // cola cuando la revision se repite, se queda para siempre con el
+            // "Sin titulo" con el que se creo la entrada.
+            if backfilled {
+                self.queue_rev += 1;
             }
         }
         self.current_duration = Duration::from_millis(

@@ -46,22 +46,27 @@ export default function App() {
 
         {/* Área principal fluida */}
         <main class="flex-1 min-w-0 h-full overflow-hidden flex relative">
-          {/* 1. Vista de Reproducción / Now Playing (Image 2) */}
+          {/*
+            1. Vista de reproducción.
+
+            Carátula y panel son UN bloque centrado, no dos columnas pegadas a
+            los bordes. Con la ventana maximizada, lo segundo dejaba ~900 px
+            muertos entre una y otro. Las proporciones salen de la referencia:
+            el panel es más ancho que la carátula, no al revés.
+          */}
           <Show when={playerViewOpen() && playback.track}>
-            {/* Columna Izquierda: Carátula panorámica 16:9 centrada */}
-            <div class="flex-1 flex items-center justify-center p-6 min-w-0">
-              <div class="relative w-full max-w-[min(480px,calc(100vh-260px))] aspect-square">
+            <div class="flex flex-1 min-w-0 items-center justify-center gap-12 px-8 py-5">
+              {/* La carátula la limita el ancho, el tope duro, o el alto de la
+                  ventana: lo que se agote antes. */}
+              <div class="relative aspect-square w-[min(34vw,620px,calc(100vh-240px))] shrink-0">
                 <img
                   src={coverUrl()!}
                   alt=""
-                  class="w-full h-full rounded-2xl object-cover shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] transition-transform duration-500"
+                  class="h-full w-full rounded-2xl object-cover shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] transition-transform duration-500"
                   classList={{ "scale-[0.98] opacity-90": !playback.playing }}
                 />
               </div>
-            </div>
 
-            {/* Columna Derecha: Tarjeta de Cristal Flotante (Image 2) */}
-            <div class="h-full py-4 pr-7">
               <SidePanel />
             </div>
           </Show>

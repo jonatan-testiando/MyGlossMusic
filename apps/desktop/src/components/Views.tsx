@@ -14,6 +14,8 @@ import {
   playSaved,
   playerViewOpen,
   setPlayerViewOpen,
+  sidebarOpen,
+  toggleSidebar,
 } from "../lib/store";
 import * as I from "./Icons";
 
@@ -24,7 +26,11 @@ export function TitleBar() {
     <header data-tauri-drag-region class="drag-region flex h-14 shrink-0 items-center justify-between px-4 z-20">
       {/* Izquierda: Menú hamburguesa + Logo YouTube Music */}
       <div class="no-drag flex items-center gap-3">
-        <button class="icon-btn size-9 text-white/80 hover:text-white hover:bg-white/10" title="Menú">
+        <button
+          class="icon-btn size-9 text-white/80 hover:text-white hover:bg-white/10"
+          onClick={toggleSidebar}
+          title={sidebarOpen() ? "Contraer menú" : "Expandir menú"}
+        >
           <I.Menu size={20} />
         </button>
         <div
@@ -126,18 +132,19 @@ export function Sidebar() {
     { id: "library" as const, label: "Biblioteca", icon: I.Library },
   ];
 
-  // Mientras se mira la canción, la barra se encoge a un raíl de iconos: el
-  // espacio se lo queda la carátula y el panel derecho, como en la referencia.
-  // Al navegar vuelve a abrirse.
-  const collapsed = () => playerViewOpen() && !!playback.track;
+  // El raíl es una preferencia del usuario, no una consecuencia de la vista:
+  // la barra tiene que servir para navegar esté donde esté.
+  const collapsed = () => !sidebarOpen();
 
   const go = (id: (typeof items)[number]["id"]) => {
     setView(id === "explore" ? "search" : id);
     setPlayerViewOpen(false);
   };
 
+  // Mientras se mira la canción no hay ninguna pestaña activa: se está en el
+  // reproductor, no navegando.
   const isActive = (id: (typeof items)[number]["id"]) =>
-    !collapsed() && view() === (id === "explore" ? "search" : id);
+    !playerViewOpen() && view() === (id === "explore" ? "search" : id);
 
   return (
     <nav
