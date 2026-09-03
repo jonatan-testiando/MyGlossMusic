@@ -12,7 +12,7 @@ export function SidePanel() {
   return (
     <aside class="glass-card flex h-full min-w-[340px] max-w-[920px] flex-1 flex-col overflow-hidden rounded-3xl border border-white/10 shadow-[0_25px_60px_rgba(0,0,0,0.5)] select-none">
       {/* Cabecera con pestañas estilo Image 2 */}
-      <div class="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4 py-3 bg-black/25">
+      <div class="glass-block m-3 flex shrink-0 items-center justify-between gap-2 px-3 py-2">
         <div class="flex shrink-0 items-center gap-1">
           <Tab id="queue" active={tab()} onPick={setTab}>A continuación</Tab>
           <Tab id="lyrics" active={tab()} onPick={setTab}>Letra</Tab>
@@ -118,8 +118,8 @@ function QueueView() {
   return (
     <div class="flex flex-1 flex-col overflow-hidden">
       {/* Subcabecera: REPRODUCIENDO DESDE + Mix de... + Guardar */}
-      <div class="px-5 pt-4 pb-2">
-        <div class="flex items-center justify-between">
+      <div class="px-3 pb-2">
+        <div class="glass-block flex items-center justify-between px-4 py-3">
           <div class="min-w-0 pr-2">
             <span class="text-[10px] font-bold uppercase tracking-widest text-white/45">
               REPRODUCIENDO DESDE

@@ -1,6 +1,6 @@
 import { createSignal, createEffect, on } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { api, parseDuration, type PlaybackState, type Palette, type SearchResult, type Lyrics, thumbAt } from "./api";
+import { api, parseDuration, thumbAt, thumbFallback, type PlaybackState, type Palette, type SearchResult, type Lyrics } from "./api";
 
 const EMPTY_STATE: PlaybackState = {
   track: null,
@@ -261,9 +261,17 @@ export function playFromResults(index: number) {
 }
 
 /** Portada grande de la pista actual. */
-export function coverUrl(width = 960): string | null {
-  // 16:9, no cuadrada. Pedirla cuadrada obliga a googleusercontent a rellenar
-  // con barras negras las portadas que no lo son — que son casi todas las de
-  // video — y esas barras vienen dentro del JPEG, no hay CSS que las quite.
+export function coverUrl(width = 1280): string | null {
+  // Sin forzar proporcion: la portada se pinta con la suya, cuadrada si es de
+  // album y 16:9 si es de video. Forzar una relacion aqui obliga al servidor a
+  // rellenar con barras negras, y esas barras van dentro del JPEG.
   return thumbAt(playback.track?.thumbnail, width, Math.round((width * 9) / 16));
+}
+
+/** Respaldo de la portada cuando el servidor no tiene la variante grande. */
+export function coverFallbackUrl(): string | null {
+  const raw = playback.track?.thumbnail;
+  if (!raw) return null;
+  const alt = thumbFallback(raw);
+  return alt ? thumbAt(alt, 320, 180) : null;
 }

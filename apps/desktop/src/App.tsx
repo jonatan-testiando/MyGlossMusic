@@ -11,6 +11,7 @@ import {
   view,
   fullLyricsOpen,
   coverUrl,
+  coverFallbackUrl,
   playerViewOpen,
   setPlayerViewOpen,
 } from "./lib/store";
@@ -55,15 +56,24 @@ export default function App() {
             el panel es más ancho que la carátula, no al revés.
           */}
           <Show when={playerViewOpen() && playback.track}>
-            <div class="flex flex-1 min-w-0 items-center justify-center gap-12 px-8 py-12">
-              {/* Marco 16:9 fijo, como en la referencia. `object-contain` para
-                  que una portada cuadrada quepa entera en vez de recortarse: el
-                  marco manda, la imagen no se deforma. */}
-              <div class="relative aspect-video w-[min(36vw,620px)] shrink-0 overflow-hidden rounded-2xl bg-black/35 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] ring-1 ring-white/5">
+            <div class="flex flex-1 min-w-0 items-center justify-center gap-12 px-8 py-16">
+              {/*
+                No hay marco: el marco ES la imagen. Con `max-w`/`max-h` y sin
+                ancho fijo, la portada se pinta con SU proporción — cuadrada la
+                de álbum, 16:9 la de vídeo — y encaja dentro del hueco. Un marco
+                de proporción fija obligaba a elegir entre recortar o dejar
+                barras, y ninguna de las dos es lo que se ve en la referencia.
+              */}
+              <div class="flex h-full w-[min(44vw,780px)] shrink-0 items-center justify-center">
                 <img
                   src={coverUrl()!}
                   alt=""
-                  class="h-full w-full object-contain transition-transform duration-500"
+                  onError={(e) => {
+                    // `maxresdefault` no existe para todos los vídeos.
+                    const alt = coverFallbackUrl();
+                    if (alt && e.currentTarget.src !== alt) e.currentTarget.src = alt;
+                  }}
+                  class="max-h-full max-w-full rounded-2xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] transition-transform duration-500"
                   classList={{ "scale-[0.98] opacity-90": !playback.playing }}
                 />
               </div>

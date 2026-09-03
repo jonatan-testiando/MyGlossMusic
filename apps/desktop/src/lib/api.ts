@@ -172,6 +172,23 @@ export function fmtTime(ms: number): string {
  * completa. El reescalado del navegador ES el desenfoque, y cuesta cero, a
  * diferencia de `backdrop-filter: blur()`, que repinta cada fotograma.
  */
+/**
+ * Miniaturas de video: `https://i.ytimg.com/vi/<id>/<variante>.jpg`.
+ *
+ * Este servidor no admite ancho ni alto, solo un juego de variantes con nombre
+ * fijo. Y la mayoria — `hqdefault`, `sddefault`, `default` — son 4:3 con las
+ * barras negras DENTRO del JPEG, no un recorte que se pueda deshacer con CSS.
+ * Las unicas limpias en 16:9 son `maxresdefault` (1280x720) y `mqdefault`
+ * (320x180).
+ */
+const YTIMG_VARIANT = /^(https?:\/\/i\.ytimg\.com\/vi\/[\w-]{11}\/)[\w]+\.jpg/;
+
+/** La variante limpia de respaldo, para cuando `maxresdefault` no existe. */
+export function thumbFallback(url: string): string | null {
+  const base = YTIMG_VARIANT.exec(url)?.[1];
+  return base ? `${base}mqdefault.jpg` : null;
+}
+
 export function thumbAt(
   url: string | null | undefined,
   width: number,
@@ -180,7 +197,12 @@ export function thumbAt(
   if (!url) return null;
   const resized = url
     .replace(/=w\d+-h\d+/, `=w${width}-h${height}`)
-    .replace(/\/w\d+-h\d+/, `/w${width}-h${height}`);
+    .replace(/\/w\d+-h\d+/, `/w${width}-h${height}`)
+    // `maxresdefault` no existe para todo; el `onError` de la portada cae a
+    // `mqdefault`, que si esta siempre.
+    .replace(YTIMG_VARIANT, (_m, base) =>
+      `${base}${width >= 480 ? "maxresdefault" : "mqdefault"}.jpg`,
+    );
   if (!inTauri) return resized;
   // Dentro de la app las imagenes las sirve Rust con cache en disco
   // (`thumbs.rs`): googleusercontent responde 429 a las rafagas de 20
