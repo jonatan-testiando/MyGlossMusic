@@ -25,9 +25,14 @@ use std::time::{Duration, Instant};
 
 /// Tamano de cada peticion por rango.
 ///
-/// 1 MiB en itag 140 son ~65 s de audio: suficiente para empezar a sonar de
-/// inmediato sin saturar la red con peticiones diminutas.
-const CHUNK: u64 = 1_048_576;
+/// 256 KiB, no mas. Las URLs acunadas traen `cps=256` y RECHAZAN con 403
+/// cualquier rango de 1 MiB o mas; medido: 64, 128, 256 y 512 KiB responden 200
+/// y 1024 KiB responde 403. Se usa 256 por ser el tamano que la propia URL
+/// declara, con 512 aun de margen.
+///
+/// En itag 251 son ~16 s de audio por peticion: de sobra para arrancar al
+/// instante sin inundar la red de peticiones diminutas.
+const CHUNK: u64 = 262_144;
 
 /// Umbral a partir del cual un 403 se interpreta como el limite de poToken.
 ///
@@ -35,6 +40,11 @@ const CHUNK: u64 = 1_048_576;
 /// 1 MiB. El unico que se descarga entero es `dQw4w9WgXcQ`, que resulto ser
 /// anormalmente permisivo y con el que se valido (mal) la Fase 0.
 const POTOKEN_WALL: u64 = 1_048_576;
+
+/// Intentos por trozo antes de darlo por perdido. Con esperas de 400, 800 y
+/// 1600 ms cubre de sobra la ventana en la que una URL recien acunada aun no
+/// esta lista.
+const RETRIES: u32 = 4;
 
 /// Estado compartido de la descarga de una pista.
 #[derive(Debug)]
@@ -186,14 +196,63 @@ async fn download(
     let mut file = std::fs::File::create(&path)
         .with_context(|| format!("no se pudo crear {}", path.display()))?;
 
+    // El tamano total viene en `clen` cuando la URL la acuno el navegador.
+    let declared: u64 = param(&url, "clen").and_then(|v| v.parse().ok()).unwrap_or(0);
+    if declared > 0 {
+        shared.total.store(declared, Ordering::Release);
+    }
+
     let mut offset: u64 = 0;
+    let mut rn: u64 = 0;
     loop {
-        let res = http
-            .get(&url)
-            .header("Range", format!("bytes={offset}-{}", offset + CHUNK - 1))
-            .send()
-            .await
-            .context("fallo una peticion de rango")?;
+        // El rango va como PARAMETRO DE QUERY, no como cabecera `Range:`.
+        //
+        // Medido sobre la misma URL acunada: con `&range=` responde 200 y los
+        // bytes del medio; solo con la cabecera responde 403. El reproductor
+        // real de YouTube tambien usa el parametro, y manda un `rn` que
+        // incrementa en cada peticion.
+        //
+        // Ojo: `&range=` corta del lado del servidor, asi que NO se debe anadir
+        // ademas la cabecera; combinarlas da 416 en cualquier offset que no
+        // sea 0.
+        let target = format!("{url}&range={offset}-{}&rn={rn}", offset + CHUNK - 1);
+        rn += 1;
+
+        // Reintento con espera creciente.
+        //
+        // Una URL recien acunada devuelve 403 durante los primeros instantes:
+        // medido, la misma URL que falla 18 ms despues de acunarse responde 200
+        // unos segundos mas tarde, con las mismas cabeceras y el mismo rango.
+        // No es un fallo permanente, asi que rendirse al primer intento
+        // convertiria un retraso en un error.
+        let mut res = None;
+        for intento in 0..RETRIES {
+            let r = http
+                .get(&target)
+                .send()
+                .await
+                .context("fallo una peticion de rango")?;
+            if r.status().is_success()
+                || r.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE
+            {
+                res = Some(r);
+                break;
+            }
+            let ultimo = intento + 1 == RETRIES;
+            if ultimo {
+                res = Some(r);
+                break;
+            }
+            let espera = Duration::from_millis(400 * (1 << intento));
+            tracing::debug!(
+                status = r.status().as_u16(),
+                offset,
+                ms = espera.as_millis() as u64,
+                "rango rechazado, reintentando"
+            );
+            tokio::time::sleep(espera).await;
+        }
+        let res = res.expect("el bucle siempre deja una respuesta");
 
         if res.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
             break;
@@ -206,6 +265,20 @@ async fn download(
             // un token de atestacion. No es un fallo de red ni una URL caducada,
             // y no se arregla reintentando ni volviendo a resolver: esta medido
             // en `ytm-spike limits`.
+            // Un 403 en el primer byte casi siempre es la URL, no el limite:
+            // registrarla es lo unico que permite distinguir "caducada",
+            // "mal formada" y "capada".
+            if offset == 0 {
+                tracing::error!(
+                    status = status.as_u16(),
+                    "rechazo en el primer byte"
+                );
+                // Volcado de la URL completa para poder reproducir el fallo
+                // fuera de la aplicacion. Solo si se pide explicitamente.
+                if let Ok(path) = std::env::var("POSIBLE_URL_OUT") {
+                    let _ = std::fs::write(path, &url);
+                }
+            }
             if status == reqwest::StatusCode::FORBIDDEN && offset >= POTOKEN_WALL {
                 anyhow::bail!(
                     "YouTube corta la descarga en {} KB sin poToken \
@@ -224,8 +297,9 @@ async fn download(
             );
         }
 
-        // La primera respuesta parcial trae el tamano real en Content-Range.
-        if offset == 0 {
+        // Con el parametro de query la respuesta es 200 sin `Content-Range`, asi
+        // que solo sirve como respaldo cuando la URL no traia `clen`.
+        if offset == 0 && declared == 0 {
             if let Some(total) = parse_content_range_total(&res) {
                 shared.total.store(total, Ordering::Release);
             }
@@ -257,6 +331,13 @@ async fn download(
     Ok(())
 }
 
+/// Lee un parametro de la query de una URL.
+fn param(url: &str, key: &str) -> Option<String> {
+    url.split(['?', '&'])
+        .find_map(|kv| kv.strip_prefix(&format!("{key}=")))
+        .map(str::to_string)
+}
+
 fn parse_content_range_total(res: &reqwest::Response) -> Option<u64> {
     // Formato: "bytes 0-1048575/3448192"
     res.headers()
@@ -277,6 +358,13 @@ pub struct CacheReader {
     file: std::fs::File,
     pos: u64,
     cache: TrackCache,
+}
+
+impl CacheReader {
+    /// Tamano total de la pista, o 0 si aun no se conoce.
+    pub fn total_bytes(&self) -> u64 {
+        self.cache.total_bytes()
+    }
 }
 
 impl Read for CacheReader {

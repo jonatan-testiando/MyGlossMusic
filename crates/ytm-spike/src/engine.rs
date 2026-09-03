@@ -9,7 +9,9 @@ use std::time::{Duration, Instant};
 use ytm_audio::{Command, Engine};
 
 pub async fn run(video_id: &str) -> Result<()> {
-    let engine = Engine::start()?;
+    // Sin acunador: el spike no tiene webview, asi que solo llegara al
+    // limite de ~1 MiB. Sirve igual para probar cola, seek y pausa.
+    let engine = Engine::start(None)?;
 
     println!("\n  Motor arrancado. Reproduciendo {video_id}\n");
     let t0 = Instant::now();

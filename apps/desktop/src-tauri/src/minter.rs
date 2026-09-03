@@ -120,6 +120,52 @@ const HOOK: &str = r#"
       }
     } catch (e) {}
   }
+  // MODO MEDICION (__YTM_OBSERVE__): no se para al primer URL. Se registran
+  // todos los rangos que pide el reproductor durante unos segundos y se
+  // informa del maximo alcanzado, para saber a que velocidad bufferiza.
+  if (window.__YTM_OBSERVE__) {
+    var maxEnd = 0, count = 0, t0 = Date.now(), firstUrl = null;
+    function observe(url) {
+      if (!url || url.indexOf('googlevideo.com') === -1) return;
+      if (url.indexOf('mime=audio') === -1) return;
+      count++;
+      if (!firstUrl) firstUrl = url;
+      var m = /[?&]range=(\d+)-(\d+)/.exec(url);
+      if (m) { var e = parseInt(m[2], 10); if (e > maxEnd) maxEnd = e; }
+    }
+    var of0 = window.fetch;
+    window.fetch = function (input) {
+      try { observe(typeof input === 'string' ? input : (input && input.url)); } catch (e) {}
+      return of0.apply(this, arguments);
+    };
+    var oo0 = XMLHttpRequest.prototype.open;
+    XMLHttpRequest.prototype.open = function (m, url) {
+      try { observe(url); } catch (e) {}
+      return oo0.apply(this, arguments);
+    };
+    setInterval(function () {
+      try {
+        var v = document.querySelector('video');
+        if (v && v.paused) { var p = v.play(); if (p && p.catch) p.catch(function () {}); }
+        var btn = document.querySelector('#play-pause-button');
+        if (btn && v && v.paused) btn.click();
+      } catch (e) {}
+    }, 400);
+    // Muestras a 5, 10 y 20 s.
+    [5000, 10000, 20000].forEach(function (ms) {
+      setTimeout(function () {
+        var v = document.querySelector('video');
+        var buffered = 0;
+        try { if (v && v.buffered.length) buffered = v.buffered.end(v.buffered.length - 1); } catch (e) {}
+        var msg = 'OBS t=' + ms + 'ms count=' + count + ' maxEndKiB=' + Math.round(maxEnd / 1024)
+          + ' bufferedS=' + buffered.toFixed(1) + ' curS=' + (v ? v.currentTime.toFixed(1) : '-');
+        if (ms === 20000) location.href = 'ytmint://' + encodeURIComponent(msg);
+        else console.log(msg);
+      }, ms);
+    });
+    return;
+  }
+
   var done = false;
   function report(url) {
     if (done || !url || url.indexOf('googlevideo.com') === -1) return;
@@ -128,9 +174,37 @@ const HOOK: &str = r#"
     done = true;
     try {
       var u = new URL(url);
-      // El rango concreto es de la peticion de la pagina; nosotros pedimos los
-      // nuestros. Se quitan para quedarnos con la URL base reutilizable.
-      ['range', 'rn', 'rbuf'].forEach(function (k) { u.searchParams.delete(k); });
+      // Se limpian tres grupos de parametros:
+      //
+      //  - range/rn/rbuf: son de la peticion concreta de la pagina; nosotros
+      //    pedimos nuestros propios rangos.
+      //  - ump/srfvp: activan el empaquetado UMP de YouTube, en el que el
+      //    cuerpo NO son los bytes del medio sino tramas protobuf. Con ump=1 lo
+      //    que se descarga son 6 bytes de estado, no audio.
+      //  - alr: hace que ante una redireccion devuelva una URL en texto plano
+      //    en vez de datos, lo que confunde al descargador.
+      // range/rn/rbuf son de la peticion concreta de la pagina: nosotros
+      // pedimos nuestros propios rangos.
+      //
+      // `ump=1` es critico: activa el empaquetado UMP de YouTube, en el que el
+      // cuerpo NO son los bytes del medio sino tramas protobuf. Medido con
+      // `ytm-spike strip`: con `ump` la respuesta empieza por `3a02...`; sin el,
+      // por `1a45dfa3`, que es la firma de WebM. `srfvp` y `alr` se pueden
+      // dejar: no cambian nada.
+      ['range', 'rn', 'rbuf', 'ump'].forEach(function (k) { u.searchParams.delete(k); });
+      // Cortar el consumo de la pagina ANTES de avisar.
+      //
+      // Mientras el reproductor de YouTube sigue pidiendo rangos de esta misma
+      // URL, googlevideo rechaza con 403 a cualquier otro consumidor. Si no se
+      // para aqui, nuestra descarga falla aunque la URL sea perfecta.
+      try {
+        document.querySelectorAll('video,audio').forEach(function (v) {
+          v.pause();
+          v.removeAttribute('src');
+          v.load();
+        });
+      } catch (e) {}
+
       location.href = 'ytmint://' + encodeURIComponent(u.toString());
     } catch (e) {}
   }
@@ -216,8 +290,10 @@ pub async fn mint_from(app: &AppHandle, video_id: &str, origin: Origin) -> Resul
         .skip_taskbar(true)
         .initialization_script(&format!(
             "window.__YTM_BLOCK_WEBM__ = {};
+window.__YTM_OBSERVE__ = {};
 {HOOK}",
-            std::env::var("POSIBLE_BLOCK_WEBM").is_ok() && origin == Origin::Watch
+            std::env::var("POSIBLE_BLOCK_WEBM").is_ok() && origin == Origin::Watch,
+            std::env::var("POSIBLE_OBSERVE").is_ok()
         ))
         .on_navigation(move |url| {
             let s = url.as_str();
@@ -233,18 +309,30 @@ pub async fn mint_from(app: &AppHandle, video_id: &str, origin: Origin) -> Resul
         .build()
         .context("no se pudo crear el webview de acunacion")?;
 
-    let minted = tokio::time::timeout(TIMEOUT, rx).await;
+    let limit = if std::env::var("POSIBLE_OBSERVE").is_ok() {
+        Duration::from_secs(40)
+    } else {
+        TIMEOUT
+    };
+    let minted = tokio::time::timeout(limit, rx).await;
 
     // La ventana se cierra pase lo que pase.
     let _ = window.close();
     if let Some(w) = app.get_webview_window(&label) {
         let _ = w.destroy();
     }
+    // Margen para que el webview suelte de verdad sus conexiones: mientras siga
+    // pidiendo rangos de la misma URL, googlevideo nos devuelve 403.
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
     match minted {
         Ok(Ok(url)) if url.contains("googlevideo.com") => {
             tracing::info!(video_id, "URL acunada");
             Ok(url)
+        }
+        Ok(Ok(msg)) if msg.starts_with("OBS ") => {
+            tracing::info!(%msg, "OBSERVACION");
+            anyhow::bail!("modo observacion: {msg}")
         }
         Ok(Ok(_)) => anyhow::bail!("el webview devolvio una URL que no es de googlevideo"),
         Ok(Err(_)) => anyhow::bail!("el webview se cerro sin devolver la URL"),

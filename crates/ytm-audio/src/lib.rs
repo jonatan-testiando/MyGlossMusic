@@ -10,6 +10,7 @@
 //!   de modo que la interfaz se entera de los cambios sin sondear.
 
 pub mod cache;
+pub mod decode;
 pub mod queue;
 
 use anyhow::{Context, Result};
@@ -19,6 +20,16 @@ use std::sync::Arc;
 use std::time::Duration;
 
 pub use queue::{Queue, Repeat};
+
+/// Fuente externa de URLs de audio.
+///
+/// La devuelve el anfitrion (la aplicacion Tauri) porque acunar una URL exige un
+/// webview, y este crate no debe depender de Tauri. Ver `minter.rs`.
+pub type UrlProvider = Arc<
+    dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String>> + Send>>
+        + Send
+        + Sync,
+>;
 use ytm_source::{InnerTube, TrackInfo};
 
 /// Cadencia de publicacion de estado. 100 ms basta para que una barra de
@@ -116,7 +127,10 @@ pub struct Engine {
 
 impl Engine {
     /// Arranca el motor. Debe llamarse dentro de un runtime tokio.
-    pub fn start() -> Result<Self> {
+    ///
+    /// `url_provider` acuna la URL de cada pista. Sin el, se usa la URL que
+    /// devuelve InnerTube, que googlevideo corta a ~1 MiB (~65 s).
+    pub fn start(url_provider: Option<UrlProvider>) -> Result<Self> {
         let player = spawn_audio_thread().context("no se pudo iniciar la salida de audio")?;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let (state_tx, state_rx) = tokio::sync::watch::channel(PlaybackState::default());
@@ -137,6 +151,7 @@ impl Engine {
             state: state_tx,
             error: None,
             loading: false,
+            url_provider,
         };
 
         tokio::spawn(inner.run(rx));
@@ -156,6 +171,13 @@ impl Engine {
     pub fn subscribe(&self) -> tokio::sync::watch::Receiver<PlaybackState> {
         self.state.clone()
     }
+}
+
+/// Lee un parametro de una URL de googlevideo.
+fn param(url: &str, key: &str) -> Option<String> {
+    url.split(['?', '&'])
+        .find_map(|kv| kv.strip_prefix(&format!("{key}="))) 
+        .map(|v| v.to_string())
 }
 
 /// Crea la salida de audio y devuelve el `Player` compartible.
@@ -201,6 +223,7 @@ struct Inner {
     state: tokio::sync::watch::Sender<PlaybackState>,
     error: Option<String>,
     loading: bool,
+    url_provider: Option<UrlProvider>,
 }
 
 impl Inner {
@@ -316,13 +339,40 @@ impl Inner {
         self.current_duration =
             Duration::from_millis(resolved.audio.duration_ms.unwrap_or(0));
 
-        let path = cache::track_path(&track.video_id, resolved.audio.itag);
-        let cache = cache::TrackCache::start(
-            resolved.audio.url.clone(),
-            resolved.audio.size_bytes,
-            path,
-            self.http.clone(),
-        )?;
+        // La URL de InnerTube esta capada a ~1 MiB. Si hay acunador, se pide una
+        // completa; si falla, se sigue con la capada para que al menos suene el
+        // primer minuto en vez de no sonar nada.
+        let (url, itag, size, mime) = match &self.url_provider {
+            Some(provider) => match provider(track.video_id.clone()).await {
+                Ok(minted) => {
+                    let itag = param(&minted, "itag").and_then(|v| v.parse().ok())
+                        .unwrap_or(resolved.audio.itag);
+                    let size = param(&minted, "clen").and_then(|v| v.parse().ok());
+                    // El acunador puede traer un formato distinto al que ofrecio
+                    // InnerTube, asi que el MIME sale de la propia URL.
+                    let mime = param(&minted, "mime").map(|m| m.replace("%2F", "/"));
+                    (minted, itag, size, mime)
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "no se pudo acunar la URL, se usa la capada");
+                    (
+                        resolved.audio.url.clone(),
+                        resolved.audio.itag,
+                        resolved.audio.size_bytes,
+                        None,
+                    )
+                }
+            },
+            None => (
+                resolved.audio.url.clone(),
+                resolved.audio.itag,
+                resolved.audio.size_bytes,
+                None,
+            ),
+        };
+
+        let path = cache::track_path(&track.video_id, itag);
+        let cache = cache::TrackCache::start(url, size, path, self.http.clone())?;
 
         let reader = {
             let cache = cache.clone();
@@ -330,8 +380,11 @@ impl Inner {
             tokio::task::spawn_blocking(move || cache.reader()).await??
         };
 
-        let source = rodio::Decoder::try_from(std::io::BufReader::new(reader))
-            .context("no se pudo decodificar el audio")?;
+        let ext = decode::extension_for(itag, mime.as_deref(), resolved.audio.codec.as_deref());
+        let source = decode::SymphoniaSource::new(reader, ext)
+            // `{:#}` conserva la cadena de causas: sin ella el fallo real queda
+            // oculto tras un mensaje generico.
+            .map_err(|e| anyhow::anyhow!("no se pudo decodificar ({ext}): {e:#}"))?;
 
         self.player.clear();
         self.player.set_volume(self.volume);
@@ -358,13 +411,26 @@ impl Inner {
         }
         let it = self.innertube.clone();
         let http = self.http.clone();
+        let provider = self.url_provider.clone();
         tokio::spawn(async move {
             match ytm_source::resolve(&it, &next.video_id).await {
                 Ok(r) => {
-                    let path = cache::track_path(&next.video_id, r.audio.itag);
-                    if let Err(e) =
-                        cache::TrackCache::start(r.audio.url, r.audio.size_bytes, path, http)
-                    {
+                    // Acunar tarda ~2 s, asi que hacerlo por adelantado es justo
+                    // lo que evita el hueco entre canciones.
+                    let (url, itag, size) = match &provider {
+                        Some(p) => match p(next.video_id.clone()).await {
+                            Ok(m) => {
+                                let itag = param(&m, "itag").and_then(|v| v.parse().ok())
+                                    .unwrap_or(r.audio.itag);
+                                let size = param(&m, "clen").and_then(|v| v.parse().ok());
+                                (m, itag, size)
+                            }
+                            Err(_) => (r.audio.url, r.audio.itag, r.audio.size_bytes),
+                        },
+                        None => (r.audio.url, r.audio.itag, r.audio.size_bytes),
+                    };
+                    let path = cache::track_path(&next.video_id, itag);
+                    if let Err(e) = cache::TrackCache::start(url, size, path, http) {
                         tracing::debug!(error = %e, "precarga fallida");
                     }
                 }

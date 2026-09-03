@@ -12,4 +12,9 @@ reqwest.workspace = true
 tracing.workspace = true
 serde.workspace = true
 dirs = "6"
+# Opus: YouTube Music sirve el audio SOLO en WebM/Opus y symphonia no lo
+# decodifica. `moosicbox_opus` es un adaptador de symphonia sobre libopus.
+moosicbox_opus = "0.4"
+symphonia = { version = "0.5", features = ["all"] }
+
 rodio = { version = "0.22", default-features = false, features = ["playback", "mp4"] }

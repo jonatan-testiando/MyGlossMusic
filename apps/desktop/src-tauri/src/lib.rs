@@ -327,7 +327,15 @@ pub fn run() {
             let runtime = tauri::async_runtime::handle();
             let _guard = runtime.inner().enter();
 
-            let engine = Engine::start()?;
+            // El acunador necesita el webview, asi que lo inyecta la app: el
+            // crate de audio no depende de Tauri.
+            let handle_for_mint = app.handle().clone();
+            let provider: ytm_audio::UrlProvider = Arc::new(move |video_id: String| {
+                let h = handle_for_mint.clone();
+                Box::pin(async move { minter::mint(&h, &video_id).await })
+            });
+
+            let engine = Engine::start(Some(provider))?;
             let innertube = InnerTube::new()?;
             let database = Arc::new(db::Db::open()?);
 
@@ -348,6 +356,46 @@ pub fn run() {
             }
 
             media::init(app.handle(), engine.clone());
+
+            // Sonda de reproduccion: `POSIBLE_PLAY_TEST=<videoId>` reproduce una
+            // pista al arrancar y registra el progreso. Verifica la cadena
+            // completa (acunar, descargar, decodificar Opus, sonar) sin
+            // depender de hacer clic en la interfaz.
+            if let Ok(id) = std::env::var("POSIBLE_PLAY_TEST") {
+                let e = engine.clone();
+                tauri::async_runtime::spawn(async move {
+                    let t = std::time::Instant::now();
+                    e.send(Command::PlayNow(id));
+                    let mut last = 0u64;
+                    for _ in 0..40 {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        let s = e.state();
+                        if let Some(err) = &s.error {
+                            tracing::error!(error = %err, "PLAY FALLO");
+                            return;
+                        }
+                        if s.position_ms != last {
+                            last = s.position_ms;
+                            tracing::info!(
+                                pos_s = s.position_ms / 1000,
+                                dur_s = s.duration_ms / 1000,
+                                buf = format!("{:.0}%", s.buffered * 100.0),
+                                playing = s.playing,
+                                "PLAY"
+                            );
+                        }
+                        // Mas de 65 s reproducidos = el muro de 1 MiB, superado.
+                        if s.position_ms > 70_000 {
+                            tracing::info!(
+                                ms = t.elapsed().as_millis() as u64,
+                                "PLAY OK: superado el limite de 1 MiB"
+                            );
+                            return;
+                        }
+                    }
+                    tracing::warn!(pos_ms = last, "PLAY: no llego a 70 s");
+                });
+            }
 
             // Sonda de acunacion: `POSIBLE_MINT_TEST=<videoId>` prueba el
             // webview oculto y registra el resultado. Sirve para verificar el
@@ -375,6 +423,12 @@ pub fn run() {
                                 .and_then(|s| s.split('&').next())
                                 .unwrap_or("?")
                                 .to_string();
+                            if let Ok(out) = std::env::var("POSIBLE_MINT_OUT") {
+                                let _ = std::fs::write(&out, &url);
+                            }
+
+                            // Prueba inmediata desde ESTE proceso, para aislar
+                            // si el 403 depende del proceso o del descargador.
                             tracing::info!(
                                 ms = t.elapsed().as_millis() as u64,
                                 itag,

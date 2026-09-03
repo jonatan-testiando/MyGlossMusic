@@ -156,6 +156,116 @@ pub async fn attest_detail(video_id: &str, visitor_data: &str, po_token: &str) -
     Ok(())
 }
 
+/// Sobre una URL ya acunada, prueba que pasa al quitar ciertos parametros.
+///
+/// `ump=1` hace que googlevideo devuelva tramas UMP (protobuf) en vez de los
+/// bytes del medio, asi que hay que quitarlo. Este comando dice exactamente que
+/// combinacion sigue siendo valida.
+/// Prueba que cabeceras acepta googlevideo para una URL acunada.
+///
+/// Python funciona y reqwest no sobre la MISMA url, asi que la diferencia esta
+/// en las cabeceras por defecto de cada cliente.
+pub async fn headers(url: &str) -> Result<()> {
+    let target = format!("{url}&range=0-262143&rn=0");
+
+    println!("
+  Cabeceras contra una URL acunada
+");
+    println!("  {:<40} {:>6}  {}", "CLIENTE", "HTTP", "CABECERA");
+    println!("  {}", "-".repeat(66));
+
+    let variantes: Vec<(&str, reqwest::Client)> = vec![
+        ("por defecto (gzip on)", reqwest::Client::new()),
+        (
+            "sin gzip",
+            reqwest::Client::builder().no_gzip().build()?,
+        ),
+        (
+            "sin gzip + UA de navegador",
+            reqwest::Client::builder()
+                .no_gzip()
+                .user_agent(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36                      (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+                )
+                .build()?,
+        ),
+        (
+            "solo UA de navegador",
+            reqwest::Client::builder()
+                .user_agent(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36                      (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+                )
+                .build()?,
+        ),
+    ];
+
+    for (label, client) in variantes {
+        match client.get(&target).send().await {
+            Ok(r) => {
+                let st = r.status().as_u16();
+                let b = r.bytes().await.unwrap_or_default();
+                let head: String = b.iter().take(4).map(|x| format!("{x:02x}")).collect();
+                let pista = if head == "1a45dfa3" { " <- WebM" } else { "" };
+                println!("  {label:<40} {st:>6}  {head}{pista}");
+            }
+            Err(e) => println!("  {label:<40}  error: {e}"),
+        }
+    }
+    println!();
+    Ok(())
+}
+
+pub async fn strip(url: &str) -> Result<()> {
+    let client = reqwest::Client::new();
+    let combos: [&[&str]; 5] = [
+        &[],
+        &["ump"],
+        &["ump", "srfvp"],
+        &["ump", "alr"],
+        &["ump", "srfvp", "alr"],
+    ];
+
+    println!("
+  Efecto de quitar parametros de una URL acunada
+");
+    println!("  {:<26} {:>6} {:>9}  {}", "QUITANDO", "HTTP", "BYTES", "CABECERA");
+    println!("  {}", "-".repeat(66));
+
+    for combo in combos {
+        let mut target = url.to_string();
+        for k in combo {
+            // Se elimina `&k=valor` de la query.
+            while let Some(i) = target.find(&format!("&{k}=")) {
+                let rest = &target[i + 1..];
+                let end = rest.find('&').map(|j| i + 1 + j).unwrap_or(target.len());
+                target.replace_range(i..end, "");
+            }
+        }
+
+        let res = client
+            .get(format!("{target}&range=0-262143"))
+            .send()
+            .await?;
+        let status = res.status().as_u16();
+        let bytes = res.bytes().await.unwrap_or_default();
+        let head: String = bytes
+            .iter()
+            .take(4)
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join("");
+        let etiqueta = if combo.is_empty() { "(nada)".to_string() } else { combo.join(",") };
+        let pista = match head.as_str() {
+            "1a45dfa3" => " <- WebM",
+            _ if head.starts_with("3a") => " <- UMP",
+            _ => "",
+        };
+        println!("  {etiqueta:<26} {status:>6} {:>9}  {head}{pista}", bytes.len());
+    }
+    println!();
+    Ok(())
+}
+
 pub async fn raw_url(url: &str) -> Result<()> {
     let client = reqwest::Client::new();
     let expected: u64 = url

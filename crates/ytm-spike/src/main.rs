@@ -58,6 +58,14 @@ async fn main() -> Result<()> {
             let id = video_id_arg(&args)?;
             engine::run(&id).await
         }
+        "headers" => {
+            let path = args.get(1).ok_or_else(|| anyhow::anyhow!("falta el archivo"))?;
+            bench::headers(std::fs::read_to_string(path)?.trim()).await
+        }
+        "strip" => {
+            let path = args.get(1).ok_or_else(|| anyhow::anyhow!("falta el archivo"))?;
+            bench::strip(std::fs::read_to_string(path)?.trim()).await
+        }
         "rawurl" => {
             let path = args.get(1).ok_or_else(|| anyhow::anyhow!("falta el archivo"))?;
             let url = std::fs::read_to_string(path)?;
