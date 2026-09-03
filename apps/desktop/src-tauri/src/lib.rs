@@ -92,6 +92,30 @@ async fn playlist(
     state.innertube.playlist(&id).await.map_err(|e| e.to_string())
 }
 
+/// Feed de inicio.
+#[tauri::command]
+async fn home(state: tauri::State<'_, App>) -> Result<ytm_source::BrowsePage, String> {
+    state.innertube.home().await.map_err(|e| e.to_string())
+}
+
+/// Una pagina de `browse`: artista, album o playlist.
+///
+/// Un solo comando en vez de uno por tipo: para InnerTube todos son el mismo
+/// endpoint con distinto `browseId`, y que cosa es cada id ya lo dice el
+/// `ItemKind` del elemento que llevo hasta aqui.
+#[tauri::command]
+async fn browse(
+    state: tauri::State<'_, App>,
+    browse_id: String,
+    params: Option<String>,
+) -> Result<ytm_source::BrowsePage, String> {
+    state
+        .innertube
+        .browse(&browse_id, params.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn play_queue(state: tauri::State<'_, App>, tracks: Vec<TrackInput>, start: usize) {
     tracing::info!(count = tracks.len(), start, "Comando play_queue recibido");
@@ -698,6 +722,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             search,
             playlist,
+            home,
+            browse,
             play_queue,
             play_now,
             toggle_play,

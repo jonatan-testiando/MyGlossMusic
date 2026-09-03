@@ -261,6 +261,9 @@ export function playFromResults(index: number) {
 }
 
 /** Portada grande de la pista actual. */
-export function coverUrl(size = 544): string | null {
-  return thumbAt(playback.track?.thumbnail, size);
+export function coverUrl(width = 960): string | null {
+  // 16:9, no cuadrada. Pedirla cuadrada obliga a googleusercontent a rellenar
+  // con barras negras las portadas que no lo son — que son casi todas las de
+  // video — y esas barras vienen dentro del JPEG, no hay CSS que las quite.
+  return thumbAt(playback.track?.thumbnail, width, Math.round((width * 9) / 16));
 }

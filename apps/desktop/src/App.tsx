@@ -55,14 +55,15 @@ export default function App() {
             el panel es más ancho que la carátula, no al revés.
           */}
           <Show when={playerViewOpen() && playback.track}>
-            <div class="flex flex-1 min-w-0 items-center justify-center gap-12 px-8 py-5">
-              {/* La carátula la limita el ancho, el tope duro, o el alto de la
-                  ventana: lo que se agote antes. */}
-              <div class="relative aspect-square w-[min(34vw,620px,calc(100vh-240px))] shrink-0">
+            <div class="flex flex-1 min-w-0 items-center justify-center gap-12 px-8 py-12">
+              {/* Marco 16:9 fijo, como en la referencia. `object-contain` para
+                  que una portada cuadrada quepa entera en vez de recortarse: el
+                  marco manda, la imagen no se deforma. */}
+              <div class="relative aspect-video w-[min(36vw,620px)] shrink-0 overflow-hidden rounded-2xl bg-black/35 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] ring-1 ring-white/5">
                 <img
                   src={coverUrl()!}
                   alt=""
-                  class="h-full w-full rounded-2xl object-cover shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] transition-transform duration-500"
+                  class="h-full w-full object-contain transition-transform duration-500"
                   classList={{ "scale-[0.98] opacity-90": !playback.playing }}
                 />
               </div>

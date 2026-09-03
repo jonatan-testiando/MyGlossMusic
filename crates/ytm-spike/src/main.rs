@@ -72,6 +72,40 @@ async fn main() -> Result<()> {
             println!();
             Ok(())
         }
+        // Lo mismo que `probe` es para reproducir, esto es para navegar: si el
+        // inicio o una pagina de artista se quedan en blanco, aqui se ve en 10
+        // segundos si YouTube cambio los renderers o si el fallo es nuestro.
+        "browse" => {
+            let id = args.get(1).map(String::as_str).unwrap_or(ytm_source::browse::HOME);
+            let it = InnerTube::new()?;
+            let page = it.browse(id, args.get(2).map(String::as_str)).await?;
+
+            println!();
+            if let Some(t) = &page.title {
+                println!("  {t}");
+                if let Some(s) = &page.subtitle {
+                    println!("  {s}");
+                }
+                println!();
+            }
+            if page.shelves.is_empty() {
+                println!("  SIN ESTANTERIAS. O el browseId no existe, o cambiaron los renderers.");
+            }
+            for shelf in &page.shelves {
+                println!("  {} ({} elementos)", shelf.title, shelf.items.len());
+                for item in shelf.items.iter().take(4) {
+                    println!(
+                        "      {:?} {:<14} {}  |  {}",
+                        item.kind, item.id, item.title, item.subtitle
+                    );
+                }
+                if shelf.items.len() > 4 {
+                    println!("      ... y {} mas", shelf.items.len() - 4);
+                }
+                println!();
+            }
+            Ok(())
+        }
         "engine" => {
             let id = video_id_arg(&args)?;
             engine::run(&id).await
@@ -157,7 +191,10 @@ fn print_usage() {
         "ytm-spike - validacion de extraccion y reproduccion\n\n\
          USO:\n  \
            ytm-spike probe <videoId>              prueba todos los clientes InnerTube\n  \
-           ytm-spike play  <videoId> [opciones]   extrae y reproduce\n\n\
+           ytm-spike play  <videoId> [opciones]   extrae y reproduce
+  \n           ytm-spike browse [browseId] [params]  inicio, artista o album
+
+\
          OPCIONES de play:\n  \
            --client <id>   fuerza un cliente concreto (ios, android_vr, tv, ...)\n  \
            --keep          conserva el archivo descargado\n"

@@ -172,11 +172,15 @@ export function fmtTime(ms: number): string {
  * completa. El reescalado del navegador ES el desenfoque, y cuesta cero, a
  * diferencia de `backdrop-filter: blur()`, que repinta cada fotograma.
  */
-export function thumbAt(url: string | null | undefined, size: number): string | null {
+export function thumbAt(
+  url: string | null | undefined,
+  width: number,
+  height = width,
+): string | null {
   if (!url) return null;
   const resized = url
-    .replace(/=w\d+-h\d+/, `=w${size}-h${size}`)
-    .replace(/\/w\d+-h\d+/, `/w${size}-h${size}`);
+    .replace(/=w\d+-h\d+/, `=w${width}-h${height}`)
+    .replace(/\/w\d+-h\d+/, `/w${width}-h${height}`);
   if (!inTauri) return resized;
   // Dentro de la app las imagenes las sirve Rust con cache en disco
   // (`thumbs.rs`): googleusercontent responde 429 a las rafagas de 20

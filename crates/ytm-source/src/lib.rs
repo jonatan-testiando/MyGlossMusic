@@ -4,6 +4,7 @@
 //! este crate a traves de tipos estables, de modo que cuando YouTube cambia,
 //! solo cambia este crate.
 
+pub mod browse;
 pub mod clients;
 pub mod innertube;
 pub mod model;
@@ -12,6 +13,7 @@ pub mod search;
 pub mod select;
 pub mod ytdlp;
 
+pub use browse::{BrowsePage, ItemKind, Shelf, ShelfItem};
 pub use clients::ClientConfig;
 pub use innertube::{Attestation, InnerTube};
 pub use model::{Format, PlayerResponse};

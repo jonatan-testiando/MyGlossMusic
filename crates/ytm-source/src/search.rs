@@ -170,39 +170,44 @@ pub(crate) fn find_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
 }
 
 /// El `videoId` puede colgar de `playlistItemData` o del `watchEndpoint`.
-fn extract_video_id(r: &Value) -> Option<String> {
+pub(crate) fn extract_video_id(r: &Value) -> Option<String> {
     let id = find_str(r, "videoId")?;
     // Los ids de YouTube son siempre 11 caracteres.
     (id.len() == 11).then(|| id.to_string())
 }
 
+/// Concatena un nodo de texto de InnerTube: `{ "runs": [{ "text": ... }] }`.
+///
+/// Los tramos vienen partidos por razones de estilo (el artista, el separador y
+/// el album van sueltos), no de contenido, asi que siempre se quieren juntos.
+pub(crate) fn runs_text(node: Option<&Value>) -> String {
+    node.and_then(|n| n.get("runs"))
+        .and_then(Value::as_array)
+        .map(|runs| {
+            runs.iter()
+                .filter_map(|r| r.get("text").and_then(Value::as_str))
+                .collect::<String>()
+        })
+        .unwrap_or_default()
+}
+
 /// Texto de cada columna flexible (titulo, subtitulo, ...).
-fn flex_column_texts(r: &Value) -> Vec<String> {
+pub(crate) fn flex_column_texts(r: &Value) -> Vec<String> {
     let mut cols = Vec::new();
     let Some(flex) = r.get("flexColumns").and_then(Value::as_array) else {
         return cols;
     };
 
     for col in flex {
-        let runs = col
+        let text = col
             .get("musicResponsiveListItemFlexColumnRenderer")
-            .and_then(|c| c.get("text"))
-            .and_then(|t| t.get("runs"))
-            .and_then(Value::as_array);
-
-        let text = runs
-            .map(|rs| {
-                rs.iter()
-                    .filter_map(|run| run.get("text").and_then(Value::as_str))
-                    .collect::<String>()
-            })
-            .unwrap_or_default();
-        cols.push(text);
+            .and_then(|c| c.get("text"));
+        cols.push(runs_text(text));
     }
     cols
 }
 
-fn extract_thumbnail(r: &Value) -> Option<String> {
+pub(crate) fn extract_thumbnail(r: &Value) -> Option<String> {
     let mut arrays = Vec::new();
     collect_by_key(r, "thumbnails", &mut arrays);
     // La ultima miniatura del primer conjunto es la de mayor resolucion.
@@ -216,7 +221,7 @@ fn extract_thumbnail(r: &Value) -> Option<String> {
 }
 
 /// Saca "3:45" del subtitulo, que YouTube mete entre separadores.
-fn extract_duration(subtitle: &str) -> Option<String> {
+pub(crate) fn extract_duration(subtitle: &str) -> Option<String> {
     subtitle
         .split('\u{2022}')
         .map(str::trim)
@@ -230,7 +235,7 @@ fn extract_duration(subtitle: &str) -> Option<String> {
 }
 
 /// Quita la duracion del subtitulo: se muestra aparte.
-fn clean_subtitle(subtitle: &str) -> String {
+pub(crate) fn clean_subtitle(subtitle: &str) -> String {
     let parts: Vec<&str> = subtitle
         .split('\u{2022}')
         .map(str::trim)
