@@ -105,6 +105,9 @@ export interface Shelf {
 export interface BrowsePage {
   title: string | null;
   subtitle: string | null;
+  /** "20 M de visualizaciones • 88 pistas • 5 horas y 59 minutos". */
+  secondSubtitle: string | null;
+  description: string | null;
   thumbnail: string | null;
   shelves: Shelf[];
 }

@@ -403,7 +403,12 @@ body {
   border: 0;
   background: transparent;
   color: var(--fg);
-  opacity: 0.7;
+  /* 0,7 era demasiado desde que el fondo ambiental se aclaro: un icono blanco
+     al 70% sobre una zona clara de la portada se pierde. */
+  opacity: 0.82;
+  /* Sombra minima para que el trazo aguante sobre las zonas mas claras del
+     ambiente, que ahora las hay. No se nota sobre fondo oscuro. */
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.45));
   border-radius: 10px;
   cursor: pointer;
   transition: opacity 140ms var(--ease), background 140ms var(--ease),

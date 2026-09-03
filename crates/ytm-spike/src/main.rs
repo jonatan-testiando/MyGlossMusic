@@ -108,8 +108,10 @@ async fn main() -> Result<()> {
             println!();
             if let Some(t) = &page.title {
                 println!("  {t}");
-                if let Some(sub) = &page.subtitle {
-                    println!("  {sub}");
+                for linea in [&page.subtitle, &page.second_subtitle, &page.description] {
+                    if let Some(l) = linea {
+                        println!("  {l}");
+                    }
                 }
                 println!();
             }

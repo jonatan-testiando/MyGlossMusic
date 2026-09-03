@@ -74,6 +74,10 @@ pub struct BrowsePage {
     pub title: Option<String>,
     /// "1,25 M de oyentes mensuales", "Album · 2023", y demas.
     pub subtitle: Option<String>,
+    /// La segunda linea: "356 k vistas · 551 pistas · Mas de 31 horas".
+    pub second_subtitle: Option<String>,
+    /// Descripcion que escribio quien hizo la playlist.
+    pub description: Option<String>,
     /// Imagen de cabecera.
     pub thumbnail: Option<String>,
     pub shelves: Vec<Shelf>,
@@ -145,6 +149,9 @@ pub fn parse_page(root: &Value) -> BrowsePage {
     if let Some(header) = find_header(root) {
         page.title = non_empty(runs_text(header.get("title")));
         page.subtitle = non_empty(header_subtitle(header));
+        page.second_subtitle = non_empty(runs_text(header.get("secondSubtitle")));
+        page.description = non_empty(runs_text(header.get("description")))
+            .or_else(|| non_empty(runs_text(header.get("descriptionShelfRenderer"))));
         page.thumbnail = extract_thumbnail(header);
     }
     page
@@ -169,7 +176,7 @@ fn find_header(root: &Value) -> Option<&Value> {
 
 /// El subtitulo aparece con nombres distintos segun el tipo de cabecera.
 fn header_subtitle(header: &Value) -> String {
-    for key in ["subtitle", "secondSubtitle", "description"] {
+    for key in ["subtitle", "straplineTextOne", "secondSubtitle"] {
         let text = runs_text(header.get(key));
         if !text.is_empty() {
             return text;
@@ -194,7 +201,13 @@ fn walk_shelves<'a>(v: &'a Value, out: &mut Vec<&'a Value>) {
     match v {
         Value::Object(map) => {
             for (k, val) in map {
-                if k == "musicCarouselShelfRenderer" || k == "musicShelfRenderer" {
+                // `musicPlaylistShelfRenderer` es el de las pistas de una
+                // playlist. Sin el, una lista abierta salia con cabecera y sin
+                // una sola cancion.
+                if k == "musicCarouselShelfRenderer"
+                    || k == "musicShelfRenderer"
+                    || k == "musicPlaylistShelfRenderer"
+                {
                     out.push(val);
                     continue; // no se baja: lo de dentro son elementos, no estanterias
                 }

@@ -2,6 +2,19 @@ import type { JSX } from "solid-js";
 
 type P = { size?: number; class?: string };
 
+/**
+ * Grosor de trazo que se ve IGUAL a cualquier tamanio.
+ *
+ * El `viewBox` es siempre de 24, asi que un `stroke-width` fijo adelgaza al
+ * reducir el icono: 1,8 en un icono de 12 px se pinta a 0,9 px reales, y sobre
+ * un fondo claro eso desaparece. Los iconos de la barra de titulo (12-15 px)
+ * eran justo los que se perdian, mientras que el de minimizar — una linea
+ * larga y sola — aguantaba.
+ *
+ * Escalando el grosor con el tamanio, todos se pintan a ~1,5 px reales.
+ */
+const trazo = (size: number) => Math.min(3.2, (1.8 * 20) / size);
+
 const svg = (path: JSX.Element, fill = true) => (p: P) =>
   (
     <svg
@@ -10,7 +23,7 @@ const svg = (path: JSX.Element, fill = true) => (p: P) =>
       viewBox="0 0 24 24"
       fill={fill ? "currentColor" : "none"}
       stroke={fill ? "none" : "currentColor"}
-      stroke-width={fill ? 0 : 1.8}
+      stroke-width={fill ? 0 : trazo(p.size ?? 20)}
       stroke-linecap="round"
       stroke-linejoin="round"
       class={p.class}

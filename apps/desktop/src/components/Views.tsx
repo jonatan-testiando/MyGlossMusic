@@ -28,6 +28,8 @@ import {
   browsePage,
   browseLoading,
   openBrowse,
+  saveBrowseAsPlaylist,
+  savingBrowse,
   atras,
   adelante,
   puedeAtras,
@@ -482,7 +484,14 @@ function Shelf(p: {
 }
 
 /** Página de `browse` vacía, para cuando el feed no llega. */
-const VACIO: BrowsePage = { title: null, subtitle: null, thumbnail: null, shelves: [] };
+const VACIO: BrowsePage = {
+  title: null,
+  subtitle: null,
+  secondSubtitle: null,
+  description: null,
+  thumbnail: null,
+  shelves: [],
+};
 
 /**
  * Llama a algo que puede fallar y devuelve un valor de repuesto.
@@ -748,14 +757,17 @@ export function SearchView() {
               {(r, i) => {
                 const activo = () => r.kind === "track" && playback.track?.videoId === r.id;
                 return (
-                  <button
-                    class="group flex items-center gap-3.5 rounded-xl border border-transparent px-3.5 py-2.5 text-left transition-all"
+                  <div
+                    class="group flex items-center gap-3.5 rounded-xl border border-transparent px-3.5 py-2.5 transition-all"
                     classList={{
                       "bg-white/[0.14] border-white/10 shadow-sm": activo(),
                       "hover:border-white/5 hover:bg-white/[0.06]": !activo(),
                     }}
-                    onClick={() => abrir(r, i())}
                   >
+                    <button
+                      class="flex min-w-0 flex-1 items-center gap-3.5 text-left"
+                      onClick={() => abrir(r, i())}
+                    >
                     <div
                       class="relative size-11 shrink-0 overflow-hidden shadow-sm ring-1 ring-white/10"
                       classList={{
@@ -793,10 +805,23 @@ export function SearchView() {
                       </div>
                     </div>
 
-                    <span class="shrink-0 text-xs font-medium tabular-nums text-white/50">
-                      {r.duration ?? ""}
-                    </span>
-                  </button>
+                      <span class="shrink-0 text-xs font-medium tabular-nums text-white/50">
+                        {r.duration ?? ""}
+                      </span>
+                    </button>
+
+                    <Show when={r.kind === "track"}>
+                      <TrackMenu
+                        track={{
+                          videoId: r.id,
+                          title: r.title,
+                          author: r.subtitle,
+                          thumbnail: r.thumbnail,
+                        }}
+                        class="opacity-0 group-hover:opacity-100"
+                      />
+                    </Show>
+                  </div>
                 );
               }}
             </For>
@@ -883,8 +908,18 @@ export function BrowseView() {
               {pagina()!.title ?? "Sin título"}
             </h1>
             <Show when={pagina()!.subtitle}>
-              <p class="mt-1.5 truncate text-sm font-medium text-white/60">
+              <p class="mt-1.5 truncate text-sm font-medium text-white/70">
                 {pagina()!.subtitle}
+              </p>
+            </Show>
+            <Show when={pagina()!.secondSubtitle}>
+              <p class="mt-0.5 truncate text-[13px] text-white/50">
+                {pagina()!.secondSubtitle}
+              </p>
+            </Show>
+            <Show when={pagina()!.description}>
+              <p class="mt-2 line-clamp-2 max-w-2xl text-[13px] leading-relaxed text-white/45">
+                {pagina()!.description}
               </p>
             </Show>
 
@@ -903,6 +938,15 @@ export function BrowseView() {
                 >
                   <I.Shuffle size={16} />
                   Aleatorio
+                </button>
+                <button
+                  class="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-white/15 disabled:opacity-40"
+                  onClick={() => saveBrowseAsPlaylist()}
+                  disabled={savingBrowse()}
+                  title="Copiar a una playlist tuya"
+                >
+                  <I.Plus size={16} />
+                  {savingBrowse() ? "Guardando…" : "Guardar"}
                 </button>
               </div>
             </Show>
@@ -949,22 +993,33 @@ function TrackList(p: { title: string; items: ShelfItem[]; onPick: (i: ShelfItem
       <div class="flex flex-col gap-0.5">
         <For each={p.items}>
           {(t, i) => (
-            <button
-              class="group flex items-center gap-3.5 rounded-xl px-3 py-2 text-left transition-colors hover:bg-white/[0.06]"
-              onClick={() => p.onPick(t, i())}
-            >
-              <span class="w-6 shrink-0 text-center text-xs tabular-nums text-white/35 group-hover:hidden">
-                {i() + 1}
-              </span>
-              <span class="hidden w-6 shrink-0 justify-center text-white group-hover:flex">
-                <I.Play size={13} />
-              </span>
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-semibold text-white">{t.title}</div>
-                <div class="truncate text-xs text-white/55">{t.subtitle}</div>
-              </div>
+            <div class="group flex items-center gap-3.5 rounded-xl px-3 py-2 transition-colors hover:bg-white/[0.06]">
+              <button
+                class="flex min-w-0 flex-1 items-center gap-3.5 text-left"
+                onClick={() => p.onPick(t, i())}
+              >
+                <span class="w-6 shrink-0 text-center text-xs tabular-nums text-white/35 group-hover:hidden">
+                  {i() + 1}
+                </span>
+                <span class="hidden w-6 shrink-0 justify-center text-white group-hover:flex">
+                  <I.Play size={13} />
+                </span>
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm font-semibold text-white">{t.title}</div>
+                  <div class="truncate text-xs text-white/55">{t.subtitle}</div>
+                </div>
+              </button>
               <span class="shrink-0 text-xs tabular-nums text-white/45">{t.duration ?? ""}</span>
-            </button>
+              <TrackMenu
+                track={{
+                  videoId: t.id,
+                  title: t.title,
+                  author: t.subtitle,
+                  thumbnail: t.thumbnail,
+                }}
+                class="opacity-0 group-hover:opacity-100"
+              />
+            </div>
           )}
         </For>
       </div>

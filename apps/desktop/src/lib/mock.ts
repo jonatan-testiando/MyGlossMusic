@@ -264,8 +264,16 @@ export const mockApi = {
   // Con la forma que devuelve `browse` de verdad para un artista: cabecera, una
   // lista de pistas (sin título, como los álbumes) y un carrusel.
   browse: async (browseId: string) => ({
-    title: browseId.startsWith("MPRE") ? "Fool For You" : "Kastra",
-    subtitle: browseId.startsWith("MPRE") ? "Single • 2021" : "1,25 M de oyentes mensuales",
+    title: browseId.startsWith("MPRE") ? "Fool For You" : browseId.startsWith("VL") ? "viejitas" : "Kastra",
+    subtitle: browseId.startsWith("MPRE")
+      ? "Single • 2021"
+      : browseId.startsWith("VL")
+        ? "Lista de reproducción • 2023"
+        : "1,25 M de oyentes mensuales",
+    secondSubtitle: browseId.startsWith("VL")
+      ? "20 M de visualizaciones • 88 pistas • 5 horas y 59 minutos"
+      : null,
+    description: browseId.startsWith("VL") ? "Las de siempre, hechas con cariño." : null,
     thumbnail: COVER,
     shelves: [
       {

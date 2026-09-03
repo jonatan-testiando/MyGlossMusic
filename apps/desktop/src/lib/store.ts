@@ -78,6 +78,9 @@ export const [view, setView] = createSignal<View>("home");
 /** Página de artista, álbum o playlist que se está viendo. */
 export const [browsePage, setBrowsePage] = createSignal<BrowsePage | null>(null);
 export const [browseLoading, setBrowseLoading] = createSignal(false);
+/** Id de la página abierta, para poder guardarla o volver a pedirla. */
+export const [browseId, setBrowseId] = createSignal<string | null>(null);
+export const [savingBrowse, setSavingBrowse] = createSignal(false);
 
 /**
  * Canal del artista de lo que suena, para la pestaña SIMILARES.
@@ -213,18 +216,57 @@ export function openBrowse(browseId: string, titulo?: string) {
   navegar({ view: "browse", browseId, titulo });
 }
 
-async function cargarBrowse(browseId: string) {
+async function cargarBrowse(id: string) {
+  setBrowseId(id);
   setBrowseLoading(true);
   // Se limpia antes de pedir: si no, se ve la página anterior con el título
   // nuevo mientras carga, que parece un fallo.
   setBrowsePage(null);
   try {
-    setBrowsePage(await api.browse(browseId));
+    setBrowsePage(await api.browse(id));
   } catch (e) {
     console.error("no se pudo abrir la pagina", e);
     setBrowsePage(null);
   } finally {
     setBrowseLoading(false);
+  }
+}
+
+/**
+ * Copia la página abierta a una playlist local.
+ *
+ * Copia, no enlaza: la lista queda tuya y en tu equipo, así que sobrevive a que
+ * YouTube la borre o su autor la haga privada. El precio es que no se actualiza
+ * si el original cambia.
+ */
+export async function saveBrowseAsPlaylist(nombre?: string) {
+  const pagina = browsePage();
+  if (!pagina || savingBrowse()) return;
+
+  const pistas = pagina.shelves.flatMap((e) => e.items.filter((i) => i.kind === "track"));
+  if (!pistas.length) return;
+
+  setSavingBrowse(true);
+  try {
+    const id = await api.createPlaylist(nombre ?? pagina.title ?? "Playlist guardada");
+    // En serie y no en paralelo: `position` sale de un MAX sobre la tabla, y
+    // en paralelo varias inserciones leerían el mismo máximo y el orden se
+    // barajaría.
+    for (const t of pistas) {
+      await api.addToPlaylist(id, {
+        videoId: t.id,
+        title: t.title,
+        author: t.subtitle,
+        thumbnail: t.thumbnail,
+      });
+    }
+    await refreshPlaylists();
+    const lista = playlists().find((l) => l.id === id);
+    if (lista) showPlaylist(lista);
+  } catch (e) {
+    console.error("no se pudo guardar la playlist", e);
+  } finally {
+    setSavingBrowse(false);
   }
 }
 export const [isFavorite, setIsFavorite] = createSignal(false);
@@ -435,10 +477,12 @@ export async function runSearch(q: string) {
   setSearchMoreToken(null);
   try {
     if (c.kind === "playlist") {
-      const p = await api.playlist(c.value);
-      setResults(p.tracks.map(fromSearchResult));
-      setSearchChips([]);
-      setResultsLabel(`${p.title ?? "Playlist"} \u2022 ${p.tracks.length} pistas`);
+      // A su página, no a una lista pelada: `browse` trae portada, autor,
+      // número de pistas y duración, que es lo que la hace reconocible.
+      // El prefijo `VL` es el que YouTube usa para el `browseId` de una lista.
+      setSearching(false);
+      openBrowse(`VL${c.value}`);
+      return;
     } else {
       // Sin filtrar por "solo canciones": ese filtro mira unicamente la
       // pestania Songs del catalogo y deja fuera videos, subidas de usuario,
@@ -590,17 +634,6 @@ function sinRepetir(items: ShelfItem[]): ShelfItem[] {
   });
 }
 
-/** Una pista de playlist o de radio, con la forma común de la interfaz. */
-function fromSearchResult(r: SearchResult): ShelfItem {
-  return {
-    kind: "track",
-    id: r.videoId,
-    title: r.title,
-    subtitle: r.subtitle,
-    thumbnail: r.thumbnail,
-    duration: r.duration,
-  };
-}
 
 /** Portada grande de la pista actual. */
 export function coverUrl(width = 1280): string | null {
