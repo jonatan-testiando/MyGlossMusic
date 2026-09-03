@@ -1,6 +1,6 @@
 import { Index, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import { Kawarp } from "@kawarp/core";
-import { palette, playback } from "../lib/store";
+import { ambientEnabled, palette, playback } from "../lib/store";
 import { thumbAt } from "../lib/api";
 
 /**
@@ -118,14 +118,16 @@ export function Ambient() {
     observer.observe(canvas);
 
     const aplicarMovimiento = () => {
-      if (quieto.matches) {
+      // El ajuste del usuario manda sobre todo lo demás; después, la
+      // preferencia del sistema de movimiento reducido.
+      if (!ambientEnabled() || quieto.matches) {
         kawarp.stop();
         kawarp.renderFrame();
       } else {
         kawarp.start();
       }
     };
-    aplicarMovimiento();
+    createEffect(aplicarMovimiento);
     quieto.addEventListener("change", aplicarMovimiento);
 
     // La portada. Sin ella, un degradado con los colores de la paleta: asi el

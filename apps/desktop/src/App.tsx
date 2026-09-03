@@ -16,6 +16,7 @@ import {
   CreatePlaylistDialog,
   PlaylistView,
 } from "./components/Playlists";
+import { SettingsDialog } from "./components/Settings";
 import { Ambient } from "./components/Ambient";
 import {
   initStore,
@@ -27,6 +28,7 @@ import {
   coverFallbackUrl,
   creatingPlaylist,
   addingTo,
+  settingsOpen,
   playerViewOpen,
   setPlayerViewOpen,
 } from "./lib/store";
@@ -195,6 +197,9 @@ export default function App() {
       </Show>
       <Show when={addingTo()}>
         <AddToPlaylistDialog />
+      </Show>
+      <Show when={settingsOpen()}>
+        <SettingsDialog />
       </Show>
     </div>
   );

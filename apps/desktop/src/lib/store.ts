@@ -10,6 +10,7 @@ import {
   type Palette,
   type PlaybackState,
   type BrowsePage,
+  type ExtractorStatus,
   type Playlist,
   type SavedTrack,
   type Track,
@@ -104,6 +105,46 @@ export const [openPlaylist, setOpenPlaylist] = createSignal<
 export const [addingTo, setAddingTo] = createSignal<Partial<Track> | null>(null);
 /** `true` mientras se pide un nombre para una playlist nueva. */
 export const [creatingPlaylist, setCreatingPlaylist] = createSignal(false);
+
+/* ----------------------------------------------------------------- Ajustes */
+
+export const [settingsOpen, setSettingsOpen] = createSignal(false);
+export const [extractor, setExtractor] = createSignal<ExtractorStatus | null>(null);
+
+export async function refreshExtractor() {
+  try {
+    setExtractor(await api.extractorStatus());
+  } catch {
+    setExtractor(null);
+  }
+}
+
+/**
+ * Fondo animado encendido o apagado.
+ *
+ * En localStorage y no en SQLite porque lo lee la interfaz al montar, y una
+ * ida y vuelta al backend haría que el fondo arrancara y se apagara a la vista.
+ */
+const AMBIENT_KEY = "myglossmusic.ambient";
+
+export const [ambientEnabled, setAmbientEnabledSignal] = createSignal(
+  (() => {
+    try {
+      return localStorage.getItem(AMBIENT_KEY) !== "0";
+    } catch {
+      return true;
+    }
+  })(),
+);
+
+export function setAmbientEnabled(on: boolean) {
+  setAmbientEnabledSignal(on);
+  try {
+    localStorage.setItem(AMBIENT_KEY, on ? "1" : "0");
+  } catch {
+    // Sin persistencia se pierde entre sesiones; la sesión actual funciona.
+  }
+}
 
 export async function refreshPlaylists() {
   try {

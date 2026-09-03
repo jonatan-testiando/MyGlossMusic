@@ -22,6 +22,7 @@ import {
   playWithRadio,
   navegar,
   playlists,
+  setSettingsOpen,
   refreshPlaylists,
   showPlaylist,
   setCreatingPlaylist,
@@ -85,6 +86,13 @@ export function TitleBar() {
 
       {/* Derecha: Flechas navegación + Avatar J + Controles de ventana de Windows */}
       <div class="no-drag flex items-center gap-3.5">
+        <button
+          class="icon-btn size-8 rounded-full hover:bg-white/10"
+          onClick={() => setSettingsOpen(true)}
+          title="Ajustes"
+        >
+          <I.Settings size={17} />
+        </button>
         <div class="flex items-center gap-1 text-white/60">
           <button
             class="icon-btn size-7 rounded-full hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-25"

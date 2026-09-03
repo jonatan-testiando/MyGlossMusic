@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-pub use cache::BoxDone;
+pub use cache::{cache_dir, BoxDone};
 pub use queue::{Queue, Repeat};
 
 /// Como llega el audio de una pista.

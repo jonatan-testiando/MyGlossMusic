@@ -304,6 +304,82 @@ fn favorites(state: tauri::State<'_, App>) -> Result<Vec<db::SavedTrack>, String
 }
 
 // --------------------------------------------------------------------------
+// Almacenamiento y ajustes
+// --------------------------------------------------------------------------
+
+/// Lo que ocupa en disco la cache de audio y la base de datos.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Storage {
+    cache_bytes: u64,
+    cache_files: u64,
+    db_bytes: u64,
+    cache_dir: String,
+    data_dir: String,
+}
+
+/// Suma el tamanio de un directorio sin bajar a subdirectorios.
+///
+/// La cache es plana — un archivo por pista — asi que no hace falta recursion,
+/// y no bajar evita que un enlace simbolico mal puesto haga recorrer medio
+/// disco.
+fn dir_size(dir: &std::path::Path) -> (u64, u64) {
+    let Ok(entradas) = std::fs::read_dir(dir) else {
+        return (0, 0);
+    };
+    entradas
+        .filter_map(Result::ok)
+        .filter_map(|e| e.metadata().ok())
+        .filter(|m| m.is_file())
+        .fold((0, 0), |(bytes, n), m| (bytes + m.len(), n + 1))
+}
+
+#[tauri::command]
+fn storage_info() -> Storage {
+    let cache = ytm_audio::cache_dir();
+    let datos = db::data_dir();
+    let (cache_bytes, cache_files) = dir_size(&cache);
+    let db_bytes = std::fs::metadata(datos.join("posible.db"))
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    Storage {
+        cache_bytes,
+        cache_files,
+        db_bytes,
+        cache_dir: cache.display().to_string(),
+        data_dir: datos.display().to_string(),
+    }
+}
+
+/// Vacia la cache de audio. No toca la base de datos.
+///
+/// Se borran solo archivos del primer nivel, por lo mismo que `dir_size`: un
+/// borrado recursivo sobre una ruta inesperada es de las pocas cosas de esta
+/// aplicacion que no tienen vuelta atras.
+#[tauri::command]
+fn clear_cache() -> Result<u64, String> {
+    let dir = ytm_audio::cache_dir();
+    let Ok(entradas) = std::fs::read_dir(&dir) else {
+        return Ok(0);
+    };
+    let mut borrados = 0;
+    for e in entradas.filter_map(Result::ok) {
+        if e.metadata().map(|m| m.is_file()).unwrap_or(false) && std::fs::remove_file(e.path()).is_ok()
+        {
+            borrados += 1;
+        }
+    }
+    Ok(borrados)
+}
+
+/// Version de la aplicacion, de `Cargo.toml`.
+#[tauri::command]
+fn app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+// --------------------------------------------------------------------------
 // Playlists locales
 // --------------------------------------------------------------------------
 
@@ -853,6 +929,9 @@ pub fn run() {
             is_favorite,
             favorites,
             history,
+            storage_info,
+            clear_cache,
+            app_version,
             create_playlist,
             rename_playlist,
             delete_playlist,

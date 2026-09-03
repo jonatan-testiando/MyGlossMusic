@@ -136,6 +136,15 @@ export interface PlaylistResult {
   tracks: SearchResult[];
 }
 
+/** Lo que ocupa la aplicación en disco. */
+export interface Storage {
+  cacheBytes: number;
+  cacheFiles: number;
+  dbBytes: number;
+  cacheDir: string;
+  dataDir: string;
+}
+
 export interface ExtractorStatus {
   available: boolean;
   version: string | null;
@@ -199,6 +208,9 @@ const realApi = {
   history: () => invoke<SavedTrack[]>("history"),
   diagnose: () => invoke<ClientHealth[]>("diagnose"),
   extractorStatus: () => invoke<ExtractorStatus>("extractor_status"),
+  storageInfo: () => invoke<Storage>("storage_info"),
+  clearCache: () => invoke<number>("clear_cache"),
+  appVersion: () => invoke<string>("app_version"),
 
   minimize: () => (inTauri ? getCurrentWindow().minimize() : Promise.resolve()),
   toggleMaximize: () => (inTauri ? getCurrentWindow().toggleMaximize() : Promise.resolve()),
