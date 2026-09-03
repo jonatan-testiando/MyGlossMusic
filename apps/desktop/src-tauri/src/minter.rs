@@ -41,6 +41,62 @@ const TIMEOUT: Duration = Duration::from_secs(25);
 /// no se pediria ningun segmento.
 const HOOK: &str = r#"
 (function () {
+  // SILENCIO ABSOLUTO.
+  //
+  // El webview esta oculto pero reproduce audio de verdad: sin esto, cada
+  // acunacion suelta un par de segundos de musica (y anuncios) por los
+  // altavoces, sin ventana visible que lo explique. Pasa de verdad.
+  //
+  // No basta con poner `muted` en el elemento cuando lo encontramos: el
+  // reproductor de la pagina puede empezar antes y puede volver a activarlo. Se
+  // interceptan las propiedades en el prototipo, ANTES de que corra ningun
+  // script de la pagina, para que ni siquiera se pueda desactivar el silencio.
+  try {
+    var P = HTMLMediaElement.prototype;
+    var mutedDesc = Object.getOwnPropertyDescriptor(P, 'muted');
+    var volDesc = Object.getOwnPropertyDescriptor(P, 'volume');
+
+    Object.defineProperty(P, 'muted', {
+      get: function () { return true; },
+      set: function () { if (mutedDesc && mutedDesc.set) mutedDesc.set.call(this, true); },
+      configurable: true,
+    });
+    Object.defineProperty(P, 'volume', {
+      get: function () { return 0; },
+      set: function () { if (volDesc && volDesc.set) volDesc.set.call(this, 0); },
+      configurable: true,
+    });
+
+    var origPlay = P.play;
+    P.play = function () {
+      try {
+        if (mutedDesc && mutedDesc.set) mutedDesc.set.call(this, true);
+        if (volDesc && volDesc.set) volDesc.set.call(this, 0);
+      } catch (e) {}
+      return origPlay.apply(this, arguments);
+    };
+
+    // Red de seguridad para elementos creados despues.
+    setInterval(function () {
+      document.querySelectorAll('video,audio').forEach(function (el) {
+        try {
+          if (mutedDesc && mutedDesc.set) mutedDesc.set.call(el, true);
+          if (volDesc && volDesc.set) volDesc.set.call(el, 0);
+        } catch (e) {}
+      });
+    }, 200);
+
+    // La Web Audio API es otra via de salida.
+    if (window.AudioContext) {
+      var OrigCtx = window.AudioContext;
+      window.AudioContext = function () {
+        var ctx = new OrigCtx(arguments[0]);
+        try { ctx.suspend(); } catch (e) {}
+        return ctx;
+      };
+    }
+  } catch (e) {}
+
   // Intento de forzar AAC: se le dice a la pagina que este equipo no soporta
   // WebM, para que el reproductor elija mp4/AAC (itag 140), que symphonia si
   // decodifica. Solo tiene sentido en www.youtube.com; music.youtube.com sirve
@@ -102,7 +158,6 @@ const HOOK: &str = r#"
       // Empujar la reproduccion si sigue parada.
       var v = document.querySelector('video');
       if (v && v.paused) {
-        v.muted = true;
         var p = v.play();
         if (p && p.catch) p.catch(function () {});
         var btn = document.querySelector('#play-pause-button, .play-pause-button');
