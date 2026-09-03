@@ -155,8 +155,14 @@ body {
  * formas del original a la vista, y por eso hacia falta la vinieta que apagaba
  * la ventana entera.
  *
- * La animacion mueve una imagen fija, no muestrea el video: por eso el efecto
- * sigue vivo con la reproduccion en pausa, igual que en la referencia.
+ * `saturate(1.5) brightness(0.8)` son los valores exactos del tema que inspira
+ * la referencia (chengggit/YouTube-Music-Dynamic-Theme, `base/var.css`), donde
+ * el fondo se pinta igual: la portada como imagen de fondo, escalada, saturada
+ * y oscurecida.
+ *
+ * La animacion es nuestra. Ese tema no anima el fondo — solo hace `transition`
+ * al cambiar de cancion — asi que el vaiven que se ve en la referencia sale de
+ * otra capa. Mover una imagen fija se le acerca y sigue vivo en pausa.
  */
 .ambient-cover {
   position: absolute;
@@ -168,7 +174,7 @@ body {
 
   background-size: cover;
   background-position: center;
-  filter: blur(9px) saturate(1.8) brightness(0.8);
+  filter: blur(9px) saturate(1.5) brightness(0.8);
   opacity: 0.85;
 
   transform-origin: 50% 50%;
