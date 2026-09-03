@@ -42,9 +42,17 @@ protocolo activamente defendido y que cambia con frecuencia.
 
 **Decisión tomada: `yt-dlp`.** La extracción se delega en `yt-dlp` como
 proceso externo (`crates/ytm-source/src/ytdlp.rs`); el acuñador queda de
-respaldo. Requiere tener `yt-dlp` instalado (PATH, `python -m yt_dlp`, o
-`yt-dlp.exe` junto al ejecutable). Sin él, la app avisa al arrancar y sigue
-funcionando con el respaldo capado a ~48 s.
+respaldo. El binario va como **sidecar** del bundle (`externalBin` en
+`tauri.conf.json`); no se versiona en git — se descarga con:
+
+```powershell
+./scripts/fetch-ytdlp.ps1
+```
+
+Orden de detección en tiempo de ejecución: `POSIBLE_YTDLP`, `yt-dlp.exe` junto
+al ejecutable (el sidecar), PATH, `python -m yt_dlp`. Sin ninguno, la app avisa
+al arrancar y sigue con el respaldo capado a ~48 s. La versión activa se ve en
+la pestaña **Diagnóstico**.
 
 ## Estado
 

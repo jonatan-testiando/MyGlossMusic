@@ -33,14 +33,19 @@ export function SidePanel() {
   );
 
   return (
-    <aside class="panel flex w-[360px] shrink-0 flex-col overflow-hidden">
-      <div class="flex shrink-0 gap-1 p-2">
+    <aside class="panel flex w-[400px] shrink-0 flex-col overflow-hidden">
+      <div class="flex shrink-0 items-center gap-1 p-2">
         <TabButton active={tab() === "queue"} onClick={() => setTab("queue")}>
           En cola
         </TabButton>
         <TabButton active={tab() === "lyrics"} onClick={() => setTab("lyrics")}>
           Letra
         </TabButton>
+        <Show when={tab() === "lyrics" && lyrics()}>
+          <span class="chip ml-1 shrink-0 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider opacity-60">
+            {lyrics()!.source}
+          </span>
+        </Show>
       </div>
 
       <Show when={tab() === "queue"}>
@@ -184,10 +189,10 @@ function LyricsView(p: { lyrics: Lyrics | null; loading: boolean }) {
                 return (
                   <p
                     data-line={i()}
-                    class="cursor-pointer py-2.5 pr-2 text-[18px] font-bold leading-snug tracking-tight transition-all duration-500"
+                    class="cursor-pointer py-3 pr-2 text-[24px] font-extrabold leading-tight tracking-tight transition-all duration-500"
                     classList={{
                       "opacity-100 scale-100": active(),
-                      "opacity-25 scale-[0.97]": !active(),
+                      "opacity-30 scale-[0.97] blur-[1.5px]": !active(),
                       "opacity-15": past(),
                     }}
                     style={

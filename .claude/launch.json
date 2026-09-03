@@ -4,8 +4,18 @@
     {
       "name": "ui",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "apps/desktop"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "apps/desktop"
+      ],
       "port": 1420
+    },
+    {
+      "name": "mock",
+      "url": "http://localhost:4174",
+      "port": 4174
     }
   ]
 }

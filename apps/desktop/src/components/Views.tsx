@@ -1,5 +1,5 @@
 import { For, Show, createEffect, createSignal, on, onMount } from "solid-js";
-import { api, thumbAt, type ClientHealth, type SavedTrack } from "../lib/api";
+import { api, thumbAt, type ClientHealth, type ExtractorStatus, type SavedTrack } from "../lib/api";
 import {
   playback,
   results,
@@ -316,11 +316,13 @@ export function LibraryView() {
  */
 export function Diagnostics() {
   const [rows, setRows] = createSignal<ClientHealth[]>([]);
+  const [extractor, setExtractor] = createSignal<ExtractorStatus | null>(null);
   const [running, setRunning] = createSignal(false);
 
   const run = async () => {
     setRunning(true);
     try {
+      api.extractorStatus().then(setExtractor).catch(() => setExtractor(null));
       setRows(await api.diagnose());
     } finally {
       setRunning(false);
@@ -341,6 +343,30 @@ export function Diagnostics() {
         YouTube cierra clientes cada pocos meses. Si la música deja de sonar, aquí se ve cuál
         sigue en pie.
       </p>
+
+      {/* El extractor real es yt-dlp; los clientes de abajo son el respaldo. */}
+      <div class="panel mb-4 flex items-center gap-3 px-4 py-3">
+        <span
+          class="size-2.5 shrink-0 rounded-full"
+          style={{ background: extractor()?.available ? "#4ade80" : "#f87171" }}
+        />
+        <div class="min-w-0 flex-1">
+          <div class="text-[13px] font-semibold">
+            Extractor: yt-dlp{" "}
+            <Show when={extractor()?.version}>
+              <span class="font-normal opacity-60">{extractor()!.version}</span>
+            </Show>
+          </div>
+          <div class="truncate text-[11px] opacity-45">
+            <Show
+              when={extractor()?.available}
+              fallback="No encontrado: la reproducción queda capada a ~48 s por pista."
+            >
+              {extractor()!.program}
+            </Show>
+          </div>
+        </div>
+      </div>
 
       <Show when={rows().length > 0} fallback={<p class="text-[13px] opacity-40">Comprobando…</p>}>
         <div class="fade-in flex flex-col gap-1">

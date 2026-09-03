@@ -63,6 +63,12 @@ export interface Palette {
   isLight: boolean;
 }
 
+export interface ExtractorStatus {
+  available: boolean;
+  version: string | null;
+  program: string | null;
+}
+
 export interface ClientHealth {
   id: string;
   status: string;
@@ -95,6 +101,7 @@ const realApi = {
   favorites: () => invoke<SavedTrack[]>("favorites"),
   history: () => invoke<SavedTrack[]>("history"),
   diagnose: () => invoke<ClientHealth[]>("diagnose"),
+  extractorStatus: () => invoke<ExtractorStatus>("extractor_status"),
 
   minimize: () => invoke<void>("window_minimize"),
   toggleMaximize: () => invoke<void>("window_toggle_maximize"),

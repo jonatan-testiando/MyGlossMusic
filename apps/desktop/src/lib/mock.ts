@@ -159,6 +159,7 @@ export const mockApi = {
   favorites: async () => favs,
   history: async () => saved,
   diagnose: async () => health,
+  extractorStatus: async () => ({ available: true, version: "2026.08.19", program: "yt-dlp.exe (sidecar)" }),
   minimize: async () => {},
   toggleMaximize: async () => {},
   close: async () => {},

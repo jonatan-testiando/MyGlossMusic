@@ -4,3 +4,6 @@
 .env
 *.log
 /scratch
+
+# Sidecar de yt-dlp: 17 MB, se regenera con scripts/fetch-ytdlp.ps1
+apps/desktop/src-tauri/bin/yt-dlp-*

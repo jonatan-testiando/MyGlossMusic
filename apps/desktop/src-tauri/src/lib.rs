@@ -29,6 +29,7 @@ struct App {
     palettes: Arc<tokio::sync::Mutex<std::collections::HashMap<String, palette::Palette>>>,
     lyrics: Arc<tokio::sync::Mutex<std::collections::HashMap<String, Option<lyrics::Lyrics>>>>,
     db: Arc<db::Db>,
+    ytdlp: Option<ytm_source::ytdlp::YtDlp>,
 }
 
 // --------------------------------------------------------------------------
@@ -233,6 +234,32 @@ struct ClientHealth {
     best: Option<String>,
 }
 
+/// Estado del extractor: es la pieza que YouTube rompe, asi que su version y
+/// su ruta se ensenan en el panel de diagnostico.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtractorStatus {
+    available: bool,
+    version: Option<String>,
+    program: Option<String>,
+}
+
+#[tauri::command]
+fn extractor_status(state: tauri::State<'_, App>) -> ExtractorStatus {
+    match &state.ytdlp {
+        Some(y) => ExtractorStatus {
+            available: true,
+            version: Some(y.version.clone()),
+            program: Some(y.describe()),
+        },
+        None => ExtractorStatus {
+            available: false,
+            version: None,
+            program: None,
+        },
+    }
+}
+
 /// Equivalente en la app a `ytm-spike probe`: cuando algo deja de sonar, dice en
 /// 10 segundos si YouTube cerro un cliente y cual sigue en pie.
 #[tauri::command]
@@ -336,6 +363,7 @@ pub fn run() {
             if ytdlp.is_none() {
                 tracing::warn!("yt-dlp no encontrado: se usara el acunador (pistas cortadas)");
             }
+            let ytdlp_for_state = ytdlp.clone();
             let handle_for_mint = app.handle().clone();
             let provider: ytm_audio::SourceProvider =
                 Arc::new(move |video_id: String, dir: std::path::PathBuf| {
@@ -529,6 +557,7 @@ pub fn run() {
                 palettes: Arc::new(tokio::sync::Mutex::new(Default::default())),
                 lyrics: Arc::new(tokio::sync::Mutex::new(Default::default())),
                 db: database,
+                ytdlp: ytdlp_for_state,
             });
             Ok(())
         })
@@ -553,6 +582,7 @@ pub fn run() {
             favorites,
             history,
             diagnose,
+            extractor_status,
             window_minimize,
             window_toggle_maximize,
             window_close,

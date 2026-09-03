@@ -137,6 +137,15 @@ impl YtDlp {
         None
     }
 
+    /// Descripcion legible de como se invoca (para el panel de diagnostico).
+    pub fn describe(&self) -> String {
+        if self.prefix.is_empty() {
+            self.program.display().to_string()
+        } else {
+            format!("{} {}", self.program.display(), self.prefix.join(" "))
+        }
+    }
+
     /// Arranca la descarga de una pista al directorio dado.
     ///
     /// Devuelve en cuanto yt-dlp ha decidido formato y ruta (antes de bajar un
