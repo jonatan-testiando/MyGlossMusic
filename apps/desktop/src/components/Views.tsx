@@ -22,6 +22,7 @@ import {
   playWithRadio,
   navegar,
   playlists,
+  refreshPlaylists,
   showPlaylist,
   setCreatingPlaylist,
   browsePage,
@@ -45,6 +46,7 @@ import {
   palette,
 } from "../lib/store";
 import * as I from "./Icons";
+import { TrackMenu } from "./TrackMenu";
 
 /* ---------------------------------------------------------------- Titlebar */
 
@@ -973,71 +975,166 @@ function TrackList(p: { title: string; items: ShelfItem[]; onPick: (i: ShelfItem
 /* ---------------------------------------------------------------- Library */
 
 /** Favoritos e historial, ambos guardados en SQLite local. */
+/**
+ * Biblioteca: lo que es tuyo y vive en este equipo.
+ *
+ * Tres pestañas y no una lista sola porque son tres cosas distintas: lo que
+ * armaste, lo que marcaste y lo que sonó. Todo sale de SQLite, sin red.
+ */
 export function LibraryView() {
-  const [tab, setTab] = createSignal<"favorites" | "history">("favorites");
+  const [tab, setTab] = createSignal<"playlists" | "favorites" | "history">("playlists");
   const [rows, setRows] = createSignal<SavedTrack[]>([]);
+  const [cargando, setCargando] = createSignal(false);
 
-  const load = async () => {
+  const cargar = async () => {
+    if (tab() === "playlists") {
+      refreshPlaylists();
+      return;
+    }
+    setCargando(true);
     try {
       setRows(tab() === "favorites" ? await api.favorites() : await api.history());
     } catch {
       setRows([]);
+    } finally {
+      setCargando(false);
     }
   };
 
-  createEffect(on(tab, load));
+  createEffect(on(tab, cargar));
+
+  const pestanas = [
+    ["playlists", "Playlists"],
+    ["favorites", "Favoritos"],
+    ["history", "Historial"],
+  ] as const;
 
   return (
-    <div class="flex h-full flex-col">
-      <div class="flex shrink-0 gap-1 px-5 pt-4">
-        <For each={[["favorites", "Favoritos"], ["history", "Historial"]] as const}>
-          {([id, label]) => (
+    <div class="scroll-area h-full px-8 py-6">
+      <h1 class="mb-4 text-3xl font-extrabold tracking-tight text-white">Biblioteca</h1>
+
+      <div class="mb-5 flex items-center gap-2">
+        <For each={pestanas}>
+          {([id, etiqueta]) => (
             <button
-              class="rounded-lg px-3.5 py-1.5 text-[12px] font-medium transition-colors"
+              class="rounded-full border px-4 py-1.5 text-xs font-semibold transition-all"
               classList={{
-                "bg-[var(--panel-strong)]": tab() === id,
-                "opacity-50 hover:opacity-80": tab() !== id,
+                "bg-white/20 border-white/25 text-white shadow-sm": tab() === id,
+                "bg-white/[0.04] border-white/10 text-white/60 hover:bg-white/10 hover:text-white":
+                  tab() !== id,
               }}
               onClick={() => setTab(id)}
             >
-              {label}
+              {etiqueta}
             </button>
           )}
         </For>
       </div>
 
-      <div class="scroll-area flex-1 px-4 py-3">
+      <Show when={tab() === "playlists"}>
         <Show
-          when={rows().length > 0}
+          when={playlists().length > 0}
           fallback={
-            <p class="mt-14 text-center text-[13px] opacity-40">
-              {tab() === "favorites"
-                ? "Aún no has guardado nada. Usa el corazón del reproductor."
-                : "Todavía no has escuchado nada."}
-            </p>
+            <div class="py-16 text-center">
+              <p class="text-sm text-white/40">Todavía no has creado ninguna playlist.</p>
+              <button
+                class="mt-4 rounded-full bg-white/10 px-5 py-2 text-sm font-semibold text-white hover:bg-white/15"
+                onClick={() => setCreatingPlaylist(true)}
+              >
+                Crear la primera
+              </button>
+            </div>
           }
         >
-          <div class="fade-in flex flex-col gap-0.5">
-            <For each={rows()}>
-              {(t, i) => (
-                <button
-                  class="group flex items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--panel)]"
-                  classList={{ "bg-[var(--panel)]": playback.track?.videoId === t.videoId }}
-                  onClick={() => playSaved(rows(), i())}
-                >
-                  <Show when={t.thumbnail} fallback={<div class="size-11 rounded-lg bg-white/8" />}>
-                    <img src={thumbAt(t.thumbnail, 96)!} alt="" class="size-11 rounded-lg object-cover" />
-                  </Show>
-                  <div class="min-w-0 flex-1">
-                    <div class="truncate text-[13px]">{t.title}</div>
-                    <div class="truncate text-[11.5px] opacity-50">{t.author}</div>
+          <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            <For each={playlists()}>
+              {(l) => (
+                <button class="group flex flex-col text-left" onClick={() => showPlaylist(l)}>
+                  <div class="relative aspect-square w-full overflow-hidden rounded-xl shadow-lg ring-1 ring-white/10">
+                    <Show
+                      when={l.thumbnail}
+                      fallback={
+                        <div class="grid size-full place-items-center bg-white/8 text-white/25">
+                          <I.Music size={34} />
+                        </div>
+                      }
+                    >
+                      <img
+                        src={thumbAt(l.thumbnail, 320)!}
+                        alt=""
+                        class="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+                    </Show>
+                  </div>
+                  <div class="mt-2.5 truncate text-[13px] font-bold text-white">{l.name}</div>
+                  <div class="truncate text-[11.5px] text-white/50">
+                    {l.count} {l.count === 1 ? "canción" : "canciones"}
                   </div>
                 </button>
               )}
             </For>
           </div>
         </Show>
-      </div>
+      </Show>
+
+      <Show when={tab() !== "playlists"}>
+        <Show when={!cargando()} fallback={<SkeletonList />}>
+          <Show
+            when={rows().length > 0}
+            fallback={
+              <p class="py-16 text-center text-sm text-white/40">
+                {tab() === "favorites"
+                  ? "Aún no has guardado nada. Usa el pulgar del reproductor."
+                  : "Todavía no has escuchado nada."}
+              </p>
+            }
+          >
+            <div class="flex flex-col gap-0.5">
+              <For each={rows()}>
+                {(t, i) => (
+                  <div class="group flex items-center gap-3.5 rounded-xl px-3 py-2 transition-colors hover:bg-white/[0.06]">
+                    <button
+                      class="flex min-w-0 flex-1 items-center gap-3.5 text-left"
+                      onClick={() => playSaved(rows(), i())}
+                    >
+                      <Show
+                        when={t.thumbnail}
+                        fallback={<div class="size-11 shrink-0 rounded-lg bg-white/8" />}
+                      >
+                        <img
+                          src={thumbAt(t.thumbnail, 96)!}
+                          alt=""
+                          class="size-11 shrink-0 rounded-lg object-cover ring-1 ring-white/10"
+                        />
+                      </Show>
+                      <div class="min-w-0 flex-1">
+                        <div
+                          class="truncate text-sm font-semibold text-white"
+                          classList={{
+                            "text-[var(--accent)]": playback.track?.videoId === t.videoId,
+                          }}
+                        >
+                          {t.title}
+                        </div>
+                        <div class="truncate text-xs text-white/55">{t.author}</div>
+                      </div>
+                    </button>
+                    <TrackMenu
+                      track={{
+                        videoId: t.videoId,
+                        title: t.title,
+                        author: t.author,
+                        thumbnail: t.thumbnail,
+                      }}
+                      class="opacity-0 group-hover:opacity-100"
+                    />
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
+      </Show>
     </div>
   );
 }
