@@ -9,6 +9,7 @@ pub mod innertube;
 pub mod model;
 pub mod search;
 pub mod select;
+pub mod ytdlp;
 
 pub use clients::ClientConfig;
 pub use innertube::{Attestation, InnerTube};

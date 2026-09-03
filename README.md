@@ -37,8 +37,11 @@ Por tanto, hoy no hay forma de obtener una pista entera sin reimplementar el
 protocolo de autorización en vivo de YouTube (UMP / `rbuf` / `cps`). Es un
 protocolo activamente defendido y que cambia con frecuencia.
 
-**Decisión pendiente** (ver ROADMAP): implementar ese protocolo, o delegar la
-extracción en `yt-dlp` como binario externo detrás del trait de `ytm-source`.
+**Decisión tomada: `yt-dlp`.** La extracción se delega en `yt-dlp` como
+proceso externo (`crates/ytm-source/src/ytdlp.rs`); el acuñador queda de
+respaldo. Requiere tener `yt-dlp` instalado (PATH, `python -m yt_dlp`, o
+`yt-dlp.exe` junto al ejecutable). Sin él, la app avisa al arrancar y sigue
+funcionando con el respaldo capado a ~48 s.
 
 ## Estado
 

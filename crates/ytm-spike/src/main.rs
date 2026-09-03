@@ -50,6 +50,7 @@ async fn main() -> Result<()> {
                 println!("  {:>2}. {}", i + 1, h.title);
                 println!("      {} [{}]  {}", h.subtitle,
                     h.duration.as_deref().unwrap_or("?"), h.video_id);
+                println!("      thumb: {}", h.thumbnail.as_deref().unwrap_or("(ninguna)"));
             }
             println!();
             Ok(())

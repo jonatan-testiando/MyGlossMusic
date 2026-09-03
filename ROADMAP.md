@@ -158,15 +158,13 @@ Lo que de verdad diferencia el proyecto.
 
 ## Pendiente, por orden de valor
 
-0. **Extracción completa — BLOQUEANTE.** El poToken ya se acuña (webview
-   oculto, ~2 s, en silencio) y Opus ya se decodifica. Lo que falta es que
-   googlevideo autorice la pista entera: hoy solo autoriza lo que el reproductor
-   en vivo ha pedido (~48 s). Dos caminos, a decidir:
-   - **A. Implementar el protocolo en vivo** (UMP, `rbuf`, `cps`): nativo y sin
-     dependencias, pero es reverse-engineering de algo activamente defendido.
-   - **B. `yt-dlp` como extractor externo** detrás del trait de `ytm-source`:
-     funciona mañana, lo mantiene mucha gente, y el resto de la app (motor,
-     caché, UI, letras, teclas) no cambia. Coste: un binario de ~15 MB.
+0. **Extracción completa — integrada vía `yt-dlp` (opción B), pendiente de
+   verificar en vivo** con el binario instalado. El motor acepta ahora una
+   fuente externa que escribe el archivo de caché (`Provided::External`), con
+   registro de precargas para que precargar y reproducir no abran dos descargas
+   sobre el mismo archivo, y un corte de descarga ya no mata lo descargado.
+   Descartada la opción A (protocolo en vivo de YouTube): medido que la
+   autorización es posicional y ligada a la reproducción; ver README.
 1. **CI que detecte roturas de YouTube** antes que el usuario.
 2. **Normalización de volumen** con `loudness_db`, que ya se extrae.
 3. **Renovación de URL caducada** (~6 h) sin cortar la reproducción.

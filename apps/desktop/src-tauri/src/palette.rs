@@ -272,8 +272,12 @@ fn kmeans(points: &[Oklab], k: usize, iters: usize) -> Vec<Cluster> {
 /// Descarga una portada y extrae su paleta.
 pub async fn from_url(http: &reqwest::Client, url: &str) -> anyhow::Result<Palette> {
     let bytes = http.get(url).send().await?.error_for_status()?.bytes().await?;
+    from_bytes(&bytes)
+}
 
-    let img = image::load_from_memory(&bytes)?;
+/// Extrae la paleta de una imagen ya descargada.
+pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Palette> {
+    let img = image::load_from_memory(bytes)?;
     // 48x48 basta de sobra: la paleta es una estadistica, no un detalle. Reducir
     // primero hace el k-means ~100 veces mas barato.
     let small = img.resize_exact(48, 48, image::imageops::FilterType::Triangle);

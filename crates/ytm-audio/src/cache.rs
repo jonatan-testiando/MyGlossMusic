@@ -46,6 +46,10 @@ const POTOKEN_WALL: u64 = 1_048_576;
 /// esta lista.
 const RETRIES: u32 = 4;
 
+/// Futuro que resuelve cuando un proceso externo termina de escribir el archivo.
+pub type BoxDone =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + Send + 'static>>;
+
 /// Estado compartido de la descarga de una pista.
 #[derive(Debug)]
 struct Shared {
@@ -112,6 +116,69 @@ impl TrackCache {
             shared.done.store(true, Ordering::Release);
         });
 
+        Ok(cache)
+    }
+
+    /// Sigue un archivo que escribe OTRO proceso (yt-dlp).
+    ///
+    /// No se descarga nada aqui: se vigila el tamano del archivo mientras `done`
+    /// no resuelve, y al resolver se cierra. El lector funciona exactamente igual
+    /// que con una descarga propia, asi que el resto del motor no distingue una
+    /// fuente de la otra.
+    pub fn start_external(path: PathBuf, expected_size: Option<u64>, done: BoxDone) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        // Acierto de cache: el externo puede haberla dejado entera en otra sesion.
+        if let (Some(expected), Ok(meta)) = (expected_size, std::fs::metadata(&path)) {
+            if meta.len() == expected {
+                drop(done);
+                return Ok(Self {
+                    path,
+                    shared: Arc::new(Shared {
+                        downloaded: AtomicU64::new(expected),
+                        total: AtomicU64::new(expected),
+                        done: AtomicBool::new(true),
+                        error: Mutex::new(None),
+                    }),
+                });
+            }
+        }
+
+        let shared = Arc::new(Shared {
+            downloaded: AtomicU64::new(0),
+            total: AtomicU64::new(expected_size.unwrap_or(0)),
+            done: AtomicBool::new(false),
+            error: Mutex::new(None),
+        });
+        let cache = Self { path: path.clone(), shared: Arc::clone(&shared) };
+
+        tokio::spawn(async move {
+            let mut done = done;
+            let mut tick = tokio::time::interval(Duration::from_millis(50));
+            let result = loop {
+                tokio::select! {
+                    r = &mut done => break r,
+                    _ = tick.tick() => {
+                        if let Ok(m) = std::fs::metadata(&path) {
+                            shared.downloaded.store(m.len(), Ordering::Release);
+                        }
+                    }
+                }
+            };
+            if let Ok(m) = std::fs::metadata(&path) {
+                shared.downloaded.store(m.len(), Ordering::Release);
+                // El tamano real manda: `filesize_approx` de yt-dlp es estimado.
+                if result.is_ok() || shared.total.load(Ordering::Acquire) == 0 {
+                    shared.total.store(m.len(), Ordering::Release);
+                }
+            }
+            if let Err(e) = result {
+                tracing::error!(error = %e, "el proceso externo fallo");
+                *shared.error.lock().unwrap() = Some(e.to_string());
+            }
+            shared.done.store(true, Ordering::Release);
+        });
         Ok(cache)
     }
 

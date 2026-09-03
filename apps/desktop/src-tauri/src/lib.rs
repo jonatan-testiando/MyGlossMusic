@@ -9,6 +9,7 @@ mod lyrics;
 mod media;
 mod minter;
 mod palette;
+mod thumbs;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -148,9 +149,9 @@ async fn get_palette(
     if let Some(cached) = state.palettes.lock().await.get(&url) {
         return Ok(cached.clone());
     }
-    let p = palette::from_url(&state.http, &url)
-        .await
-        .map_err(|e| e.to_string())?;
+    // Los mismos bytes que muestra la interfaz, sin segunda peticion.
+    let bytes = thumbs::cached_bytes(&url).await.map_err(|e| e.to_string())?;
+    let p = palette::from_bytes(&bytes).map_err(|e| e.to_string())?;
     state.palettes.lock().await.insert(url, p.clone());
     Ok(p)
 }
@@ -316,7 +317,7 @@ pub fn run() {
         .with_target(false)
         .init();
 
-    tauri::Builder::default()
+    thumbs::register(tauri::Builder::default())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             // `setup` corre FUERA del contexto del runtime asincrono, asi que
@@ -329,11 +330,43 @@ pub fn run() {
 
             // El acunador necesita el webview, asi que lo inyecta la app: el
             // crate de audio no depende de Tauri.
+            // yt-dlp primero: es lo unico que trae pistas enteras (ver
+            // `ytdlp.rs`). El acunador queda de respaldo, capado a ~48 s.
+            let ytdlp = ytm_source::ytdlp::YtDlp::detect();
+            if ytdlp.is_none() {
+                tracing::warn!("yt-dlp no encontrado: se usara el acunador (pistas cortadas)");
+            }
             let handle_for_mint = app.handle().clone();
-            let provider: ytm_audio::UrlProvider = Arc::new(move |video_id: String| {
-                let h = handle_for_mint.clone();
-                Box::pin(async move { minter::mint(&h, &video_id).await })
-            });
+            let provider: ytm_audio::SourceProvider =
+                Arc::new(move |video_id: String, dir: std::path::PathBuf| {
+                    let h = handle_for_mint.clone();
+                    let y = ytdlp.clone();
+                    Box::pin(async move {
+                        if let Some(y) = y {
+                            match y.download(&video_id, &dir).await {
+                                Ok(d) => {
+                                    let info = d.info.clone();
+                                    let mime = info.mime();
+                                    return Ok(ytm_audio::Provided::External {
+                                        path: info.path,
+                                        size: info.size,
+                                        mime,
+                                        done: Box::pin(d.wait()),
+                                        title: info.title,
+                                        author: info.author,
+                                        thumbnail: info.thumbnail,
+                                        duration_ms: info.duration_ms,
+                                    });
+                                }
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "yt-dlp fallo; se intenta el acunador")
+                                }
+                            }
+                        }
+                        let url = minter::mint(&h, &video_id).await?;
+                        Ok(ytm_audio::Provided::Url { url, size: None, mime: None })
+                    })
+                });
 
             let engine = Engine::start(Some(provider))?;
             let innertube = InnerTube::new()?;

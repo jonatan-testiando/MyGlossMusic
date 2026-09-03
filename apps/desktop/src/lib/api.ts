@@ -133,5 +133,16 @@ export function fmtTime(ms: number): string {
  */
 export function thumbAt(url: string | null | undefined, size: number): string | null {
   if (!url) return null;
-  return url.replace(/=w\d+-h\d+/, `=w${size}-h${size}`).replace(/\/w\d+-h\d+/, `/w${size}-h${size}`);
+  const resized = url
+    .replace(/=w\d+-h\d+/, `=w${size}-h${size}`)
+    .replace(/\/w\d+-h\d+/, `/w${size}-h${size}`);
+  if (!inTauri) return resized;
+  // Dentro de la app las imagenes las sirve Rust con cache en disco
+  // (`thumbs.rs`): googleusercontent responde 429 a las rafagas de 20
+  // miniaturas que dispara una busqueda. WebView2 expone los esquemas
+  // propios como `http://<esquema>.localhost/`.
+  const base = navigator.userAgent.includes("Windows")
+    ? "http://thumb.localhost/"
+    : "thumb://localhost/";
+  return `${base}?u=${encodeURIComponent(resized)}`;
 }

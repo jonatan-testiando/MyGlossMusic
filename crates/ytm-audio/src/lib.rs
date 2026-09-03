@@ -16,20 +16,54 @@ pub mod queue;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+pub use cache::BoxDone;
 pub use queue::{Queue, Repeat};
 
-/// Fuente externa de URLs de audio.
-///
-/// La devuelve el anfitrion (la aplicacion Tauri) porque acunar una URL exige un
-/// webview, y este crate no debe depender de Tauri. Ver `minter.rs`.
-pub type UrlProvider = Arc<
-    dyn Fn(String) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<String>> + Send>>
+/// Como llega el audio de una pista.
+pub enum Provided {
+    /// Una URL que descargamos nosotros.
+    Url {
+        url: String,
+        size: Option<u64>,
+        mime: Option<String>,
+    },
+    /// Un proceso externo (yt-dlp) esta escribiendo `path`; `done` resuelve al
+    /// terminar. Los metadatos son opcionales: sirven de respaldo si InnerTube
+    /// no pudo resolver la pista.
+    External {
+        path: PathBuf,
+        size: Option<u64>,
+        mime: Option<String>,
+        done: BoxDone,
+        title: Option<String>,
+        author: Option<String>,
+        thumbnail: Option<String>,
+        duration_ms: Option<u64>,
+    },
+}
+
+/// Proveedor de fuente de audio. Lo inyecta el anfitrion (la app Tauri): acunar
+/// una URL exige un webview y lanzar yt-dlp exige saber donde esta, y este crate
+/// no debe saber nada de eso. Recibe el id del video y el directorio de cache.
+pub type SourceProvider = Arc<
+    dyn Fn(String, PathBuf) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Provided>> + Send>>
         + Send
         + Sync,
 >;
+
+/// Una pista lista (o en curso) para reproducir.
+struct Prepared {
+    cache: cache::TrackCache,
+    itag: u32,
+    mime: Option<String>,
+    meta: Option<TrackInfo>,
+    duration_ms: Option<u64>,
+}
 use ytm_source::{InnerTube, TrackInfo};
 
 /// Cadencia de publicacion de estado. 100 ms basta para que una barra de
@@ -128,9 +162,9 @@ pub struct Engine {
 impl Engine {
     /// Arranca el motor. Debe llamarse dentro de un runtime tokio.
     ///
-    /// `url_provider` acuna la URL de cada pista. Sin el, se usa la URL que
-    /// devuelve InnerTube, que googlevideo corta a ~1 MiB (~65 s).
-    pub fn start(url_provider: Option<UrlProvider>) -> Result<Self> {
+    /// `source_provider` trae el audio de cada pista (yt-dlp, acunador...). Sin
+    /// el, se usa la URL de InnerTube, que googlevideo corta a ~1 MiB (~65 s).
+    pub fn start(source_provider: Option<SourceProvider>) -> Result<Self> {
         let player = spawn_audio_thread().context("no se pudo iniciar la salida de audio")?;
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
         let (state_tx, state_rx) = tokio::sync::watch::channel(PlaybackState::default());
@@ -151,7 +185,9 @@ impl Engine {
             state: state_tx,
             error: None,
             loading: false,
-            url_provider,
+            source_provider,
+            prepared: Arc::new(Mutex::new(HashMap::new())),
+            partial_warned: false,
         };
 
         tokio::spawn(inner.run(rx));
@@ -171,6 +207,51 @@ impl Engine {
     pub fn subscribe(&self) -> tokio::sync::watch::Receiver<PlaybackState> {
         self.state.clone()
     }
+}
+
+/// Obtiene la fuente de audio de una pista: proveedor si lo hay, InnerTube si no.
+async fn prepare(
+    provider: Option<SourceProvider>,
+    http: reqwest::Client,
+    video_id: &str,
+    fallback: Option<&ytm_source::AudioStream>,
+) -> Result<Prepared> {
+    if let Some(p) = provider {
+        match p(video_id.to_string(), cache::cache_dir()).await {
+            Ok(Provided::Url { url, size, mime }) => {
+                let itag = param(&url, "itag")
+                    .and_then(|v| v.parse().ok())
+                    .or(fallback.map(|f| f.itag))
+                    .unwrap_or(0);
+                let mime = mime.or_else(|| param(&url, "mime").map(|m| m.replace("%2F", "/")));
+                let size = size.or_else(|| param(&url, "clen").and_then(|v| v.parse().ok()));
+                let path = cache::track_path(video_id, itag);
+                let cache = cache::TrackCache::start(url, size, path, http)?;
+                return Ok(Prepared { cache, itag, mime, meta: None, duration_ms: None });
+            }
+            Ok(Provided::External { path, size, mime, done, title, author, thumbnail, duration_ms }) => {
+                let cache = cache::TrackCache::start_external(path, size, done)?;
+                let meta = title.is_some().then(|| TrackInfo {
+                    video_id: video_id.to_string(),
+                    title,
+                    author,
+                    thumbnail,
+                });
+                return Ok(Prepared {
+                    cache,
+                    itag: fallback.map(|f| f.itag).unwrap_or(0),
+                    mime,
+                    meta,
+                    duration_ms,
+                });
+            }
+            Err(e) => tracing::warn!(error = %e, "el proveedor fallo; se usa InnerTube"),
+        }
+    }
+    let f = fallback.context("sin proveedor de audio y sin URL de InnerTube")?;
+    let path = cache::track_path(video_id, f.itag);
+    let cache = cache::TrackCache::start(f.url.clone(), f.size_bytes, path, http)?;
+    Ok(Prepared { cache, itag: f.itag, mime: None, meta: None, duration_ms: None })
 }
 
 /// Lee un parametro de una URL de googlevideo.
@@ -223,7 +304,12 @@ struct Inner {
     state: tokio::sync::watch::Sender<PlaybackState>,
     error: Option<String>,
     loading: bool,
-    url_provider: Option<UrlProvider>,
+    source_provider: Option<SourceProvider>,
+    /// Pistas precargadas, por id. Reproducir una que ya esta aqui reutiliza la
+    /// descarga en curso en vez de abrir otra sobre el mismo archivo.
+    prepared: Arc<Mutex<HashMap<String, Prepared>>>,
+    /// Ya se aviso de que esta pista quedo incompleta.
+    partial_warned: bool,
 }
 
 impl Inner {
@@ -322,68 +408,65 @@ impl Inner {
 
         self.error = None;
         self.loading = true;
+        self.partial_warned = false;
         self.armed.store(false, Ordering::Release);
         self.seek_base = Duration::ZERO;
         self.player.clear();
         self.publish();
 
-        let resolved = ytm_source::resolve(&self.innertube, &track.video_id)
-            .await
-            .with_context(|| format!("no se pudo resolver {}", track.video_id))?;
-
-        // Los metadatos reales solo se conocen tras resolver; la cola pudo
-        // haberse construido con un id pelado.
-        if track.title.is_none() {
-            self.queue.set_current_meta(resolved.track.clone());
-        }
-        self.current_duration =
-            Duration::from_millis(resolved.audio.duration_ms.unwrap_or(0));
-
-        // La URL de InnerTube esta capada a ~1 MiB. Si hay acunador, se pide una
-        // completa; si falla, se sigue con la capada para que al menos suene el
-        // primer minuto en vez de no sonar nada.
-        let (url, itag, size, mime) = match &self.url_provider {
-            Some(provider) => match provider(track.video_id.clone()).await {
-                Ok(minted) => {
-                    let itag = param(&minted, "itag").and_then(|v| v.parse().ok())
-                        .unwrap_or(resolved.audio.itag);
-                    let size = param(&minted, "clen").and_then(|v| v.parse().ok());
-                    // El acunador puede traer un formato distinto al que ofrecio
-                    // InnerTube, asi que el MIME sale de la propia URL.
-                    let mime = param(&minted, "mime").map(|m| m.replace("%2F", "/"));
-                    (minted, itag, size, mime)
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "no se pudo acunar la URL, se usa la capada");
-                    (
-                        resolved.audio.url.clone(),
-                        resolved.audio.itag,
-                        resolved.audio.size_bytes,
-                        None,
-                    )
-                }
-            },
-            None => (
-                resolved.audio.url.clone(),
-                resolved.audio.itag,
-                resolved.audio.size_bytes,
-                None,
-            ),
+        // InnerTube da titulo, portada y duracion. Si falla y hay proveedor, no
+        // es fatal: yt-dlp trae sus propios metadatos.
+        let resolved = match ytm_source::resolve(&self.innertube, &track.video_id).await {
+            Ok(r) => Some(r),
+            Err(e) if self.source_provider.is_some() => {
+                tracing::warn!(error = %e, "InnerTube no resolvio; se sigue con el proveedor");
+                None
+            }
+            Err(e) => return Err(e.context(format!("no se pudo resolver {}", track.video_id))),
         };
 
-        let path = cache::track_path(&track.video_id, itag);
-        let cache = cache::TrackCache::start(url, size, path, self.http.clone())?;
+        // Si la precarga ya la dejo lista (o en curso), se reutiliza: arrancar
+        // una segunda descarga sobre el mismo archivo lo corromperia.
+        let already = self.prepared.lock().unwrap().remove(&track.video_id);
+        let prepared = match already {
+            Some(p) if p.cache.error().is_none() => p,
+            _ => {
+                prepare(
+                    self.source_provider.clone(),
+                    self.http.clone(),
+                    &track.video_id,
+                    resolved.as_ref().map(|r| &r.audio),
+                )
+                .await?
+            }
+        };
+
+        // Metadatos: InnerTube primero, yt-dlp de respaldo.
+        if track.title.is_none() {
+            if let Some(r) = &resolved {
+                self.queue.set_current_meta(r.track.clone());
+            } else if let Some(m) = &prepared.meta {
+                self.queue.set_current_meta(m.clone());
+            }
+        }
+        self.current_duration = Duration::from_millis(
+            resolved
+                .as_ref()
+                .and_then(|r| r.audio.duration_ms)
+                .or(prepared.duration_ms)
+                .unwrap_or(0),
+        );
 
         let reader = {
-            let cache = cache.clone();
-            // La apertura espera al primer byte, asi que fuera del hilo async.
-            tokio::task::spawn_blocking(move || cache.reader()).await??
+            let c = prepared.cache.clone();
+            tokio::task::spawn_blocking(move || c.reader()).await??
         };
-
-        let ext = decode::extension_for(itag, mime.as_deref(), resolved.audio.codec.as_deref());
+        let ext = decode::extension_for(
+            prepared.itag,
+            prepared.mime.as_deref(),
+            resolved.as_ref().and_then(|r| r.audio.codec.as_deref()),
+        );
         let source = decode::SymphoniaSource::new(reader, ext)
-            // `{:#}` conserva la cadena de causas: sin ella el fallo real queda
-            // oculto tras un mensaje generico.
             .map_err(|e| anyhow::anyhow!("no se pudo decodificar ({ext}): {e:#}"))?;
 
         self.player.clear();
@@ -391,16 +474,15 @@ impl Inner {
         self.player.append(source);
         self.player.play();
 
-        self.current_cache = Some(cache);
+        self.current_cache = Some(prepared.cache);
         self.loading = false;
         self.armed.store(true, Ordering::Release);
 
-        // Precarga de la siguiente para que la transicion no tenga hueco.
         self.prefetch_next();
         Ok(())
     }
 
-    /// Descarga la siguiente pista en segundo plano. Los fallos se ignoran a
+    /// Deja lista la siguiente pista en segundo plano. Los fallos se ignoran a
     /// proposito: es una optimizacion, no una funcionalidad.
     fn prefetch_next(&self) {
         let Some(next) = self.queue.peek_next().cloned() else {
@@ -409,32 +491,20 @@ impl Inner {
         if Some(&next.video_id) == self.queue.current().map(|c| &c.video_id) {
             return; // Repeat::One: ya esta en cache
         }
+        if self.prepared.lock().unwrap().contains_key(&next.video_id) {
+            return;
+        }
         let it = self.innertube.clone();
         let http = self.http.clone();
-        let provider = self.url_provider.clone();
+        let provider = self.source_provider.clone();
+        let prepared = Arc::clone(&self.prepared);
         tokio::spawn(async move {
-            match ytm_source::resolve(&it, &next.video_id).await {
-                Ok(r) => {
-                    // Acunar tarda ~2 s, asi que hacerlo por adelantado es justo
-                    // lo que evita el hueco entre canciones.
-                    let (url, itag, size) = match &provider {
-                        Some(p) => match p(next.video_id.clone()).await {
-                            Ok(m) => {
-                                let itag = param(&m, "itag").and_then(|v| v.parse().ok())
-                                    .unwrap_or(r.audio.itag);
-                                let size = param(&m, "clen").and_then(|v| v.parse().ok());
-                                (m, itag, size)
-                            }
-                            Err(_) => (r.audio.url, r.audio.itag, r.audio.size_bytes),
-                        },
-                        None => (r.audio.url, r.audio.itag, r.audio.size_bytes),
-                    };
-                    let path = cache::track_path(&next.video_id, itag);
-                    if let Err(e) = cache::TrackCache::start(url, size, path, http) {
-                        tracing::debug!(error = %e, "precarga fallida");
-                    }
+            let resolved = ytm_source::resolve(&it, &next.video_id).await.ok();
+            match prepare(provider, http, &next.video_id, resolved.as_ref().map(|r| &r.audio)).await {
+                Ok(p) => {
+                    prepared.lock().unwrap().insert(next.video_id.clone(), p);
                 }
-                Err(e) => tracing::debug!(error = %e, "precarga: no se pudo resolver"),
+                Err(e) => tracing::debug!(error = %e, "precarga fallida"),
             }
         });
     }
@@ -471,9 +541,17 @@ impl Inner {
         }
         if let Some(c) = &self.current_cache {
             if let Some(e) = c.error() {
-                self.error = Some(e);
-                self.armed.store(false, Ordering::Release);
-                return;
+                // Sin un solo byte, es un fallo. Con bytes, se reproduce lo que
+                // hay: un corte de red a mitad no debe parar la musica.
+                if c.downloaded_bytes() == 0 {
+                    self.error = Some(e);
+                    self.armed.store(false, Ordering::Release);
+                    return;
+                }
+                if !self.partial_warned {
+                    self.partial_warned = true;
+                    tracing::warn!(error = %e, "descarga incompleta: se reproduce lo que hay");
+                }
             }
         }
         if self.player.empty() && !self.player.is_paused() {
