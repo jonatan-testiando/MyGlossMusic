@@ -32,6 +32,8 @@ export const [searching, setSearching] = createSignal(false);
 export const [query, setQuery] = createSignal("");
 export const [view, setView] = createSignal<"home" | "search" | "library" | "diagnostics">("home");
 export const [isFavorite, setIsFavorite] = createSignal(false);
+/** Cabecera de la vista de resultados cuando lo cargado es una playlist. */
+export const [resultsLabel, setResultsLabel] = createSignal<string | null>(null);
 
 /**
  * Posicion local interpolada.
@@ -104,12 +106,46 @@ export function playSaved(list: { videoId: string; title: string; author: string
   api.playQueue(list, index);
 }
 
+/**
+ * Clasifica lo que hay en el cuadro: enlace de playlist, enlace de video o
+ * texto de busqueda. Espejo de `ytm_source::parse_input` (con tests alli).
+ */
+function classify(raw: string): { kind: "playlist" | "video" | "query"; value: string } {
+  const s = raw.trim();
+  const isUrl = /youtube\.com\/|youtu\.be\//.test(s);
+  if (isUrl) {
+    const list = /[?&]list=([\w-]+)/.exec(s)?.[1];
+    // WL y LL exigen sesion; se cae al video o a la busqueda.
+    if (list && list !== "WL" && list !== "LL") return { kind: "playlist", value: list };
+    const v = /[?&]v=([\w-]{11})/.exec(s)?.[1] ?? /youtu\.be\/([\w-]{11})/.exec(s)?.[1];
+    if (v) return { kind: "video", value: v };
+  }
+  if (/^(PL|OLAK5uy_|RDCLAK)[\w-]{10,}$/.test(s)) return { kind: "playlist", value: s };
+  return { kind: "query", value: s };
+}
+
 export async function runSearch(q: string) {
   if (!q.trim()) return;
+  const c = classify(q);
+
+  // Un enlace de cancion suelto se reproduce directamente.
+  if (c.kind === "video") {
+    api.playNow(c.value);
+    setView("home");
+    return;
+  }
+
   setSearching(true);
   setView("search");
+  setResultsLabel(null);
   try {
-    setResults(await api.search(q));
+    if (c.kind === "playlist") {
+      const p = await api.playlist(c.value);
+      setResults(p.tracks);
+      setResultsLabel(`${p.title ?? "Playlist"} \u2022 ${p.tracks.length} pistas`);
+    } else {
+      setResults(await api.search(c.value));
+    }
   } catch (e) {
     console.error("busqueda fallida", e);
     setResults([]);

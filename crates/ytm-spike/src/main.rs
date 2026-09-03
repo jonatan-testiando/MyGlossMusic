@@ -38,6 +38,23 @@ async fn main() -> Result<()> {
             let id = video_id_arg(&args)?;
             probe(&id).await
         }
+        "pl" => {
+            let raw = args[1..].join(" ");
+            anyhow::ensure!(!raw.is_empty(), "falta el enlace o id");
+            match ytm_source::parse_input(&raw) {
+                ytm_source::Input::Playlist(id) => {
+                    let it = InnerTube::new()?;
+                    let p = it.playlist(&id).await?;
+                    println!("\n  {} ({} pistas)\n", p.title.as_deref().unwrap_or("(sin titulo)"), p.tracks.len());
+                    for (i, t) in p.tracks.iter().take(10).enumerate() {
+                        println!("  {:>2}. {} - {}", i + 1, t.title, t.subtitle);
+                    }
+                    println!();
+                }
+                other => println!("no es una playlist: {other:?}"),
+            }
+            Ok(())
+        }
         "search" => {
             let q = args[1..].join(" ");
             anyhow::ensure!(!q.is_empty(), "falta la consulta");

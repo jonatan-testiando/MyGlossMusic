@@ -103,6 +103,7 @@ let favs: SavedTrack[] = saved.slice(0, 2);
 
 export const mockApi = {
   search: async (_q: string) => results,
+  playlist: async () => ({ title: "Playlist de prueba", tracks: results }),
   playQueue: async (_t: unknown[], start: number) => {
     state.queueIndex = start;
     state.track = state.queue[start] ?? null;

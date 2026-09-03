@@ -63,6 +63,11 @@ export interface Palette {
   isLight: boolean;
 }
 
+export interface PlaylistResult {
+  title: string | null;
+  tracks: SearchResult[];
+}
+
 export interface ExtractorStatus {
   available: boolean;
   version: string | null;
@@ -79,6 +84,8 @@ export interface ClientHealth {
 const realApi = {
   search: (query: string, onlySongs = true) =>
     invoke<SearchResult[]>("search", { query, onlySongs }),
+
+  playlist: (id: string) => invoke<PlaylistResult>("playlist", { id }),
 
   playQueue: (tracks: Partial<Track>[], start: number) =>
     invoke<void>("play_queue", { tracks, start }),

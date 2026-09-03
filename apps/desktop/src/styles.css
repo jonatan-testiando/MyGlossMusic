@@ -37,9 +37,11 @@ body {
   font-family: "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, -apple-system,
     sans-serif;
   color: var(--fg);
-  /* Transparente a proposito: el fondo lo pinta `.app-shell`, con esquinas
-     redondeadas propias al ser una ventana sin marco. */
-  background: transparent;
+  /* OPACO a proposito. La ventana transparente + WebView2 se congela al
+     restaurar desde minimizado en Windows (no repinta y parece colgada), asi
+     que la transparencia esta desactivada; las esquinas redondeadas las pone
+     DWM desde Rust, no el CSS. */
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
@@ -51,7 +53,8 @@ body {
 .app-shell {
   position: relative;
   height: 100%;
-  border-radius: 12px;
+  /* Sin radio propio: con la ventana opaca lo redondea el compositor (DWM). */
+  border-radius: 0;
   overflow: hidden;
   background: var(--bg);
   transition: background 900ms var(--ease);

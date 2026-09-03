@@ -129,7 +129,7 @@ pub fn parse_results(root: &Value) -> Vec<SearchResult> {
 }
 
 /// Recolecta todos los valores asociados a `key`, a cualquier profundidad.
-fn collect_by_key<'a>(v: &'a Value, key: &str, out: &mut Vec<&'a Value>) {
+pub(crate) fn collect_by_key<'a>(v: &'a Value, key: &str, out: &mut Vec<&'a Value>) {
     match v {
         Value::Object(map) => {
             for (k, val) in map {
@@ -149,7 +149,7 @@ fn collect_by_key<'a>(v: &'a Value, key: &str, out: &mut Vec<&'a Value>) {
 }
 
 /// Primer valor de cadena asociado a `key`, a cualquier profundidad.
-fn find_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
+pub(crate) fn find_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
     match v {
         Value::Object(map) => {
             for (k, val) in map {

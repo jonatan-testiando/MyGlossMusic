@@ -76,6 +76,14 @@ impl From<TrackInput> for TrackInfo {
 }
 
 #[tauri::command]
+async fn playlist(
+    state: tauri::State<'_, App>,
+    id: String,
+) -> Result<ytm_source::Playlist, String> {
+    state.innertube.playlist(&id).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn play_queue(state: tauri::State<'_, App>, tracks: Vec<TrackInput>, start: usize) {
     let tracks: Vec<TrackInfo> = tracks.into_iter().map(Into::into).collect();
     state.engine.send(Command::SetQueue { tracks, start });
@@ -416,6 +424,35 @@ pub fn run() {
                 engine.send(Command::SetShuffle(true));
             }
 
+            // Esquinas redondeadas via DWM. La ventana dejo de ser transparente
+            // (transparent + WebView2 se congela al restaurar desde minimizado
+            // en Windows), asi que el redondeo CSS ya no puede recortarla: se le
+            // pide al compositor, que ademas dibuja borde y sombra nativos.
+            #[cfg(target_os = "windows")]
+            if let Some(w) = app.get_webview_window("main") {
+                if let Ok(hwnd) = w.hwnd() {
+                    #[link(name = "dwmapi")]
+                    extern "system" {
+                        fn DwmSetWindowAttribute(
+                            h: isize,
+                            attr: u32,
+                            value: *const core::ffi::c_void,
+                            size: u32,
+                        ) -> i32;
+                    }
+                    const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
+                    const DWMWCP_ROUND: u32 = 2;
+                    unsafe {
+                        DwmSetWindowAttribute(
+                            hwnd.0 as isize,
+                            DWMWA_WINDOW_CORNER_PREFERENCE,
+                            &DWMWCP_ROUND as *const u32 as *const _,
+                            4,
+                        );
+                    }
+                }
+            }
+
             media::init(app.handle(), engine.clone());
 
             // Sonda de reproduccion: `POSIBLE_PLAY_TEST=<videoId>` reproduce una
@@ -563,6 +600,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             search,
+            playlist,
             play_queue,
             play_now,
             toggle_play,

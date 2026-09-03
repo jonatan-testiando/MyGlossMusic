@@ -9,6 +9,7 @@ import {
   query,
   setQuery,
   runSearch,
+  resultsLabel,
   playFromResults,
   coverUrl,
   playSaved,
@@ -163,6 +164,14 @@ export function SearchView() {
             </p>
           }
         >
+          <Show when={resultsLabel()}>
+            <div class="mb-2 flex items-center justify-between gap-3 px-3">
+              <h2 class="min-w-0 truncate text-[15px] font-semibold">{resultsLabel()}</h2>
+              <button class="chip shrink-0 px-3.5 py-1.5 text-[12px]" onClick={() => playFromResults(0)}>
+                Reproducir todo
+              </button>
+            </div>
+          </Show>
           <div class="fade-in flex flex-col gap-0.5">
             <For each={results()}>
               {(r, i) => {
