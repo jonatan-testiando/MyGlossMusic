@@ -13,6 +13,8 @@ import {
   playFromResults,
   coverUrl,
   playSaved,
+  playerViewOpen,
+  setPlayerViewOpen,
 } from "../lib/store";
 import * as I from "./Icons";
 
