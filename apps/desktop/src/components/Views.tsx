@@ -28,7 +28,10 @@ export function TitleBar() {
         </button>
         <div
           class="flex items-center gap-2 cursor-pointer select-none"
-          onClick={() => setView("home")}
+          onClick={() => {
+            setView("home");
+            setPlayerViewOpen(false);
+          }}
           title="Posible Music"
         >
           <div class="size-7 rounded-full bg-[#ff0000] flex items-center justify-center shadow-[0_0_15px_rgba(255,0,0,0.5)]">
@@ -43,11 +46,34 @@ export function TitleBar() {
       {/* Centro: Buscador estilo píldora ancha */}
       <SearchBox />
 
-      {/* Derecha: Avatar + Controles de ventana de Windows */}
-      <div class="no-drag flex items-center gap-4">
-        <div class="size-8 rounded-full bg-gradient-to-tr from-amber-500 via-rose-500 to-purple-600 ring-2 ring-white/20 flex items-center justify-center text-xs font-bold text-white shadow-md cursor-pointer hover:scale-105 transition-transform">
-          A
+      {/* Derecha: Flechas navegación + Avatar J + Controles de ventana de Windows */}
+      <div class="no-drag flex items-center gap-3.5">
+        <div class="flex items-center gap-1 text-white/60">
+          <button
+            class="icon-btn size-7 rounded-full hover:bg-white/10 hover:text-white"
+            onClick={() => {
+              setView("home");
+              setPlayerViewOpen(false);
+            }}
+            title="Atrás"
+          >
+            <I.ChevronLeft size={16} />
+          </button>
+          <button
+            class="icon-btn size-7 rounded-full hover:bg-white/10 hover:text-white"
+            onClick={() => {
+              if (playback.track) setPlayerViewOpen(true);
+            }}
+            title="Adelante"
+          >
+            <I.ChevronRight size={16} />
+          </button>
         </div>
+
+        <div class="size-8 rounded-full bg-purple-600 ring-2 ring-white/20 flex items-center justify-center text-xs font-bold text-white shadow-md cursor-pointer hover:scale-105 transition-transform">
+          J
+        </div>
+
         <div class="flex items-center gap-0.5">
           <button class="icon-btn size-8 text-white/70 hover:text-white" onClick={() => api.minimize()} title="Minimizar">
             <I.Minimize size={14} />
@@ -72,6 +98,7 @@ function SearchBox() {
       onSubmit={(e) => {
         e.preventDefault();
         runSearch(query());
+        setPlayerViewOpen(false);
         input.blur();
       }}
     >
@@ -81,7 +108,7 @@ function SearchBox() {
           ref={input}
           value={query()}
           onInput={(e) => setQuery(e.currentTarget.value)}
-          placeholder="Search songs, albums, artists, podcasts"
+          placeholder="Buscar canciones, álbumes, artistas o podcasts"
           class="w-full bg-transparent text-sm text-white placeholder:text-white/40 outline-none"
         />
       </div>
@@ -93,33 +120,44 @@ function SearchBox() {
 
 export function Sidebar() {
   const items = [
-    { id: "home" as const, label: "Home", icon: I.Home },
-    { id: "explore" as const, label: "Explore", icon: I.Compass },
-    { id: "library" as const, label: "Library", icon: I.Library },
+    { id: "home" as const, label: "Principal", icon: I.Home },
+    { id: "explore" as const, label: "Explorar", icon: I.Compass },
+    { id: "library" as const, label: "Biblioteca", icon: I.Library },
+    { id: "refresh" as const, label: "Actualizar", icon: I.Refresh },
   ];
 
   return (
-    <nav class="flex w-[210px] shrink-0 flex-col gap-1 py-2 pl-3 pr-2 z-10 select-none">
+    <nav class="flex w-[215px] shrink-0 flex-col gap-1 py-3 pl-3 pr-2 z-10 select-none">
       {/* Navegación principal */}
       <div class="space-y-1">
         <For each={items}>
           {(item) => {
             const isActive = () =>
-              (item.id === "home" && view() === "home") || (item.id === "library" && view() === "library");
+              (item.id === "home" && view() === "home" && !playerViewOpen()) ||
+              (item.id === "library" && view() === "library" && !playerViewOpen());
             return (
               <button
-                class="flex w-full items-center gap-4 rounded-xl px-3.5 py-2.5 text-left text-sm font-medium transition-all"
+                class="flex w-full items-center gap-4 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] font-medium transition-all"
                 classList={{
                   "bg-white/15 text-white shadow-sm font-semibold": isActive(),
                   "text-white/70 hover:text-white hover:bg-white/10": !isActive(),
                 }}
                 onClick={() => {
-                  if (item.id === "home") setView("home");
-                  else if (item.id === "library") setView("library");
-                  else setView("search");
+                  if (item.id === "home") {
+                    setView("home");
+                    setPlayerViewOpen(false);
+                  } else if (item.id === "library") {
+                    setView("library");
+                    setPlayerViewOpen(false);
+                  } else if (item.id === "refresh") {
+                    location.reload();
+                  } else {
+                    setView("search");
+                    setPlayerViewOpen(false);
+                  }
                 }}
               >
-                <item.icon size={20} class={isActive() ? "text-white" : "text-white/70"} />
+                <item.icon size={19} class={isActive() ? "text-white" : "text-white/70"} />
                 {item.label}
               </button>
             );
@@ -127,41 +165,88 @@ export function Sidebar() {
         </For>
       </div>
 
-      {/* Botón + New playlist */}
+      {/* Botón + Nueva playlist */}
       <div class="pt-4 pb-2 px-1">
         <button
-          class="flex w-full items-center justify-center gap-2 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-semibold py-2 px-3 text-white transition-all border border-white/5"
-          onClick={() => setView("library")}
+          class="flex w-full items-center justify-center gap-2 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-semibold py-2 px-3 text-white transition-all border border-white/10 shadow-sm"
+          onClick={() => {
+            setView("library");
+            setPlayerViewOpen(false);
+          }}
         >
           <I.Plus size={15} />
-          New playlist
+          Nueva playlist
         </button>
       </div>
 
       <div class="my-2 h-[1px] bg-white/10 mx-2" />
 
-      {/* Listas de reproducción estilo glassy-music */}
+      {/* Listas de reproducción estilo glassy-music (Image 2 & 3) */}
       <div class="scroll-area flex-1 px-1 space-y-1 overflow-y-auto">
         <button
           class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
-          onClick={() => setView("library")}
+          onClick={() => {
+            setView("library");
+            setPlayerViewOpen(false);
+          }}
         >
           <div class="flex items-center gap-1.5 text-xs font-semibold text-white">
             <I.Pin size={12} class="text-[var(--accent)] shrink-0" />
-            <span>Liked Music</span>
+            <span>Música que te gustó</span>
           </div>
-          <span class="text-[10.5px] text-white/45 pl-4">Auto playlist</span>
+          <span class="text-[10.5px] text-white/45 pl-4">Playlist autogenerada</span>
         </button>
 
         <button
           class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
-          onClick={() => setView("diagnostics")}
+          onClick={() => {
+            setView("library");
+            setPlayerViewOpen(false);
+          }}
         >
           <div class="flex items-center gap-1.5 text-xs font-medium text-white/80">
-            <I.Stethoscope size={14} class="text-white/50 shrink-0" />
+            <span>Perreo duro</span>
+          </div>
+          <span class="text-[10.5px] text-white/45">Jonatan Carrillo</span>
+        </button>
+
+        <button
+          class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
+          onClick={() => {
+            setView("library");
+            setPlayerViewOpen(false);
+          }}
+        >
+          <div class="flex items-center gap-1.5 text-xs font-medium text-white/80">
+            <span>6XX</span>
+          </div>
+          <span class="text-[10.5px] text-white/45">Sol1XD</span>
+        </button>
+
+        <button
+          class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
+          onClick={() => {
+            setView("library");
+            setPlayerViewOpen(false);
+          }}
+        >
+          <div class="flex items-center gap-1.5 text-xs font-medium text-white/80">
+            <span>Episodios para después</span>
+          </div>
+          <span class="text-[10.5px] text-white/45">Playlist autogenerada</span>
+        </button>
+
+        <button
+          class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10 mt-2"
+          onClick={() => {
+            setView("diagnostics");
+            setPlayerViewOpen(false);
+          }}
+        >
+          <div class="flex items-center gap-1.5 text-xs font-medium text-white/60">
+            <I.Stethoscope size={13} class="text-white/40 shrink-0" />
             <span>Diagnóstico</span>
           </div>
-          <span class="text-[10.5px] text-white/45 pl-5">Estado de red y audio</span>
         </button>
       </div>
 
@@ -176,9 +261,9 @@ export function Sidebar() {
 
 export function HomeFeed() {
   const chips = [
-    "Podcasts", "Energize", "Feel good", "Relax", "Commute", "Workout", "Party", "Focus", "Sad", "Romance", "Sleep"
+    "Activarte", "Para sentirse bien", "Relajación", "Viaje diario", "Entrenamiento", "Fiesta", "Concentración", "Triste", "Romance", "Sueño"
   ];
-  const [activeChip, setActiveChip] = createSignal("Relax");
+  const [activeChip, setActiveChip] = createSignal("Para sentirse bien");
   const [historyTracks, setHistoryTracks] = createSignal<SavedTrack[]>([]);
 
   onMount(async () => {
@@ -189,13 +274,13 @@ export function HomeFeed() {
   });
 
   return (
-    <div class="scroll-area flex-1 h-full px-8 py-6 space-y-8 overflow-y-auto">
-      {/* Fila de píldoras de estado de ánimo estilo 1.mp4 / 3.webp */}
-      <div class="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
+    <div class="scroll-area flex-1 h-full px-8 py-5 space-y-9 overflow-y-auto">
+      {/* Fila de píldoras de estado de ánimo estilo Image 3 */}
+      <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
         <For each={chips}>
           {(c) => (
             <button
-              class="shrink-0 rounded-full px-4 py-1.5 text-xs font-semibold transition-all border"
+              class="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all border"
               classList={{
                 "bg-white/20 border-white/25 text-white shadow-sm": activeChip() === c,
                 "bg-white/[0.05] border-white/10 text-white/60 hover:text-white hover:bg-white/10": activeChip() !== c,
@@ -208,49 +293,115 @@ export function HomeFeed() {
         </For>
       </div>
 
-      {/* Sección 1: Listen again */}
+      {/* Sección 1: Volver a escuchar con avatar Jonatan Carrillo */}
       <div>
         <div class="flex items-center justify-between mb-4">
-          <div>
-            <span class="text-[10.5px] uppercase font-bold tracking-widest text-white/40">NANIKILL</span>
-            <h2 class="text-2xl font-bold text-white tracking-tight">Listen again</h2>
+          <div class="flex items-center gap-3">
+            <div class="size-8 rounded-full bg-purple-600 flex items-center justify-center font-bold text-white text-xs shadow-md">
+              J
+            </div>
+            <div>
+              <span class="text-[10px] uppercase font-bold tracking-widest text-white/45">JONATAN CARRILLO</span>
+              <h2 class="text-2xl font-bold text-white tracking-tight leading-tight">Volver a escuchar</h2>
+            </div>
           </div>
-          <button class="rounded-full bg-white/10 hover:bg-white/15 px-3.5 py-1 text-xs font-semibold text-white border border-white/10">
-            More
-          </button>
+          <div class="flex items-center gap-1.5">
+            <button class="icon-btn size-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white">
+              <I.ChevronLeft size={16} />
+            </button>
+            <button class="icon-btn size-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white">
+              <I.ChevronRight size={16} />
+            </button>
+          </div>
         </div>
 
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
           <Show
             when={historyTracks().length > 0}
             fallback={
-              <div class="col-span-full py-12 text-center text-sm text-white/40">
-                Pega el enlace de una canción o busca arriba para empezar a escuchar.
+              <div class="col-span-full py-8 text-center text-sm text-white/40">
+                Usa el buscador arriba para reproducir tus primeras canciones.
               </div>
             }
           >
-            <For each={historyTracks().slice(0, 6)}>
+            <For each={historyTracks().slice(0, 4)}>
               {(track) => (
                 <div
                   class="group flex flex-col cursor-pointer select-none"
-                  onClick={() => api.playNow(track.videoId)}
+                  onClick={() => {
+                    api.playNow(track.videoId);
+                    setPlayerViewOpen(true);
+                  }}
                 >
-                  <div class="relative aspect-square w-full rounded-xl overflow-hidden ring-1 ring-white/10 shadow-lg group-hover:shadow-2xl transition-all">
+                  <div class="relative aspect-video w-full rounded-2xl overflow-hidden ring-1 ring-white/15 shadow-xl group-hover:shadow-2xl transition-all">
                     <img
-                      src={thumbAt(track.thumbnail, 320)!}
+                      src={thumbAt(track.thumbnail, 480)!}
                       alt=""
                       class="size-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
                     <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <div class="size-11 rounded-full bg-white text-black flex items-center justify-center shadow-xl">
-                        <I.Play size={20} class="translate-x-[1px]" />
+                      <div class="size-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl">
+                        <I.Play size={22} class="translate-x-[1px]" />
                       </div>
                     </div>
                   </div>
-                  <div class="mt-2.5 truncate text-xs font-bold text-white group-hover:text-[var(--accent)]">
+                  <div class="mt-2.5 truncate text-[13.5px] font-bold text-white group-hover:text-[var(--accent)]">
                     {track.title}
                   </div>
-                  <div class="truncate text-[11px] text-white/50 font-medium">
+                  <div class="truncate text-xs text-white/55 font-medium mt-0.5">
+                    {track.author}
+                  </div>
+                </div>
+              )}
+            </For>
+          </Show>
+        </div>
+      </div>
+
+      {/* Sección 2: Videos musicales para ti */}
+      <div>
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-xl font-bold text-white tracking-tight">Videos musicales para ti</h2>
+          <div class="flex items-center gap-2">
+            <button class="rounded-full bg-white/10 hover:bg-white/15 px-3.5 py-1 text-xs font-semibold text-white border border-white/10">
+              Reproducir todo
+            </button>
+            <button class="icon-btn size-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white">
+              <I.ChevronLeft size={16} />
+            </button>
+            <button class="icon-btn size-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white">
+              <I.ChevronRight size={16} />
+            </button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
+          <Show when={historyTracks().length > 4}>
+            <For each={historyTracks().slice(4, 8)}>
+              {(track) => (
+                <div
+                  class="group flex flex-col cursor-pointer select-none"
+                  onClick={() => {
+                    api.playNow(track.videoId);
+                    setPlayerViewOpen(true);
+                  }}
+                >
+                  <div class="relative aspect-video w-full rounded-2xl overflow-hidden ring-1 ring-white/15 shadow-xl group-hover:shadow-2xl transition-all">
+                    <img
+                      src={thumbAt(track.thumbnail, 480)!}
+                      alt=""
+                      class="size-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div class="size-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl">
+                        <I.Play size={22} class="translate-x-[1px]" />
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mt-2.5 truncate text-[13.5px] font-bold text-white group-hover:text-[var(--accent)]">
+                    {track.title}
+                  </div>
+                  <div class="truncate text-xs text-white/55 font-medium mt-0.5">
                     {track.author}
                   </div>
                 </div>

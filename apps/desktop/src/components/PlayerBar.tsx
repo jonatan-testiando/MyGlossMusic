@@ -1,6 +1,6 @@
 import { Show, createSignal } from "solid-js";
 import { api, fmtTime, thumbAt } from "../lib/api";
-import { playback, position, isFavorite, toggleFavorite, fullLyricsOpen, setFullLyricsOpen } from "../lib/store";
+import { playback, position, isFavorite, toggleFavorite, fullLyricsOpen, setFullLyricsOpen, playerViewOpen, setPlayerViewOpen } from "../lib/store";
 import * as I from "./Icons";
 
 /** Barra de reproducción inferior de extremo a extremo estilo glassy-music (7.webp / 9.mp4). */
@@ -103,20 +103,27 @@ export function PlayerBar() {
       <div class="flex items-center gap-3.5 max-w-[500px]">
         <Show
           when={playback.track?.thumbnail}
-          fallback={<div class="size-11 shrink-0 rounded-lg bg-white/10" />}
+          fallback={<div class="size-11 shrink-0 rounded-lg bg-white/10 cursor-pointer" onClick={() => setPlayerViewOpen(!playerViewOpen())} />}
         >
           <img
             src={thumbAt(playback.track!.thumbnail, 96)!}
             alt=""
-            class="size-11 shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-sm"
+            class="size-11 shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-sm cursor-pointer hover:opacity-85 transition-opacity"
+            onClick={() => setPlayerViewOpen(!playerViewOpen())}
           />
         </Show>
-        <div class="min-w-0 max-w-[260px]">
-          <div class="truncate text-[13.5px] font-bold text-white leading-snug">
-            {playback.track?.title ?? "Nothing playing"}
+        <div class="min-w-0 max-w-[280px]">
+          <div
+            class="truncate text-[13.5px] font-bold text-white leading-snug cursor-pointer hover:underline"
+            onClick={() => setPlayerViewOpen(!playerViewOpen())}
+          >
+            {playback.track?.title ?? "Nada reproduciéndose"}
           </div>
           <div class="truncate text-[11.5px] text-white/55 font-medium mt-0.5">
             {playback.track?.author ?? ""}
+            <Show when={playback.track}>
+              <span> • 5.9 M de vistas • 67 k me gusta</span>
+            </Show>
           </div>
         </div>
 
@@ -124,7 +131,7 @@ export function PlayerBar() {
           <div class="flex items-center gap-0.5 ml-1">
             <button
               class="icon-btn size-8 text-white/60 hover:text-white"
-              title="Dislike"
+              title="No me gusta"
             >
               <I.ThumbsDown size={16} />
             </button>
@@ -135,13 +142,13 @@ export function PlayerBar() {
                 "text-white/60 hover:text-white": !isFavorite(),
               }}
               onClick={() => toggleFavorite()}
-              title={isFavorite() ? "Remove from liked" : "Like"}
+              title={isFavorite() ? "Quitar de me gusta" : "Me gusta"}
             >
               <I.ThumbsUp size={16} />
             </button>
             <button
               class="icon-btn size-8 text-white/60 hover:text-white"
-              title="More actions"
+              title="Más acciones"
             >
               <I.More size={16} />
             </button>
@@ -149,7 +156,7 @@ export function PlayerBar() {
         </Show>
       </div>
 
-      {/* 3. Derecha: Volumen + Repetir + Aleatorio + Expandir/Cerrar */}
+      {/* 3. Derecha: Volumen + Repetir + Aleatorio + Expandir/Cerrar Reproductor */}
       <div class="flex items-center justify-end gap-1.5 min-w-[240px]">
         {/* Volumen con slider emergente */}
         <div
@@ -160,7 +167,7 @@ export function PlayerBar() {
           <button
             class="icon-btn size-8 text-white/70 hover:text-white"
             onClick={() => api.setVolume(playback.volume > 0 ? 0 : 1)}
-            title="Volume"
+            title="Volumen"
           >
             <Show when={playback.volume > 0} fallback={<I.VolumeMute size={18} />}>
               <I.Volume size={18} />
@@ -178,7 +185,7 @@ export function PlayerBar() {
               value={playback.volume}
               onInput={(e) => api.setVolume(Number(e.currentTarget.value))}
               class="w-full accent-white h-1 cursor-pointer"
-              aria-label="Volume"
+              aria-label="Volumen"
             />
           </div>
         </div>
@@ -191,7 +198,7 @@ export function PlayerBar() {
             "text-white/70 hover:text-white": playback.repeat === "off",
           }}
           onClick={cycleRepeat}
-          title={`Repeat: ${playback.repeat}`}
+          title={`Repetir: ${playback.repeat}`}
         >
           <Show when={playback.repeat === "one"} fallback={<I.Repeat size={17} />}>
             <I.RepeatOne size={17} />
@@ -206,19 +213,21 @@ export function PlayerBar() {
             "text-white/70 hover:text-white": !playback.shuffle,
           }}
           onClick={() => api.setShuffle(!playback.shuffle)}
-          title="Shuffle"
+          title="Aleatorio"
         >
           <I.Shuffle size={17} />
         </button>
 
-        {/* Chevron para abrir/cerrar letras en pantalla completa */}
+        {/* Chevron para alternar vista del reproductor (Image 2 vs 3) */}
         <button
           class="icon-btn size-8 ml-1 text-white/70 hover:text-white"
-          classList={{ "text-[var(--accent)] rotate-180": fullLyricsOpen() }}
-          onClick={() => setFullLyricsOpen(!fullLyricsOpen())}
-          title="Toggle Fullscreen Lyrics"
+          onClick={() => setPlayerViewOpen(!playerViewOpen())}
+          title={playerViewOpen() ? "Cerrar reproductor" : "Abrir reproductor"}
         >
-          <I.ChevronUp size={18} />
+          <I.ChevronUp
+            size={18}
+            class={`transition-transform duration-300 ${playerViewOpen() ? "rotate-180" : ""}`}
+          />
         </button>
       </div>
     </footer>

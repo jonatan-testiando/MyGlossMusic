@@ -3,63 +3,66 @@ import { api, fmtTime, thumbAt } from "../lib/api";
 import { playback, lyrics, lyricsLoading, position, setFullLyricsOpen } from "../lib/store";
 import * as I from "./Icons";
 
-/** Panel derecho de cristal escarchado: Pestañas UP NEXT, LYRICS, RELATED idéntico a 7.webp. */
+/** Panel derecho flotante de cristal escarchado idéntico a Image 2. */
 export function SidePanel() {
-  const [tab, setTab] = createSignal<"queue" | "lyrics" | "related">("queue");
+  const [tab, setTab] = createSignal<"queue" | "lyrics" | "comments" | "similar">("queue");
 
   return (
-    <aside class="glass-card flex w-[520px] max-w-[560px] h-full flex-col overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.6)]">
-      {/* Cabecera con pestañas de cristal escarchado estilo 7.webp */}
-      <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3 bg-black/20">
-        <div class="flex items-center gap-1.5 rounded-xl bg-white/[0.06] p-1 border border-white/5 shadow-inner">
+    <aside class="glass-card flex w-[500px] max-w-[540px] h-full flex-col overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.65)] rounded-3xl border border-white/10 select-none">
+      {/* Cabecera con pestañas estilo Image 2 */}
+      <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3.5 bg-black/25">
+        <div class="flex items-center gap-2">
           <button
-            class="rounded-lg px-3.5 py-1 text-[11.5px] font-bold tracking-wider uppercase transition-all duration-200"
+            class="px-3 py-1 text-[12px] font-bold tracking-wider uppercase transition-all duration-150 rounded-lg"
             classList={{
-              "bg-white/20 text-white shadow-sm": tab() === "queue",
+              "bg-white/20 text-white shadow-sm font-extrabold": tab() === "queue",
               "text-white/50 hover:text-white/80": tab() !== "queue",
             }}
             onClick={() => setTab("queue")}
           >
-            Up Next
+            A continuación
           </button>
           <button
-            class="rounded-lg px-3.5 py-1 text-[11.5px] font-bold tracking-wider uppercase transition-all duration-200"
+            class="px-3 py-1 text-[12px] font-bold tracking-wider uppercase transition-all duration-150 rounded-lg"
             classList={{
-              "bg-white/20 text-white shadow-sm": tab() === "lyrics",
+              "bg-white/20 text-white shadow-sm font-extrabold": tab() === "lyrics",
               "text-white/50 hover:text-white/80": tab() !== "lyrics",
             }}
             onClick={() => setTab("lyrics")}
           >
-            Lyrics
+            Letra
           </button>
           <button
-            class="rounded-lg px-3.5 py-1 text-[11.5px] font-bold tracking-wider uppercase transition-all duration-200"
+            class="px-3 py-1 text-[12px] font-bold tracking-wider uppercase transition-all duration-150 rounded-lg"
             classList={{
-              "bg-white/20 text-white shadow-sm": tab() === "related",
-              "text-white/50 hover:text-white/80": tab() !== "related",
+              "bg-white/20 text-white shadow-sm font-extrabold": tab() === "comments",
+              "text-white/50 hover:text-white/80": tab() !== "comments",
             }}
-            onClick={() => setTab("related")}
+            onClick={() => setTab("comments")}
           >
-            Related
+            Comentarios
+          </button>
+          <button
+            class="px-3 py-1 text-[12px] font-bold tracking-wider uppercase transition-all duration-150 rounded-lg"
+            classList={{
+              "bg-white/20 text-white shadow-sm font-extrabold": tab() === "similar",
+              "text-white/50 hover:text-white/80": tab() !== "similar",
+            }}
+            onClick={() => setTab("similar")}
+          >
+            Similares
           </button>
         </div>
 
-        {/* Badge de fuente */}
-        <div class="flex items-center gap-2">
-          <div class="flex items-center gap-1.5 rounded-full bg-white/5 px-2.5 py-1 border border-white/5 text-[11px] text-white/50 font-medium">
-            <span class="size-2 rounded-full bg-red-500 animate-pulse" />
-            <span>Source: LRCLIB</span>
-          </div>
-          <Show when={tab() === "lyrics"}>
-            <button
-              class="icon-btn size-7 opacity-70 hover:opacity-100 hover:bg-white/10"
-              onClick={() => setFullLyricsOpen(true)}
-              title="Pantalla completa"
-            >
-              <I.Maximize size={13} />
-            </button>
-          </Show>
-        </div>
+        <Show when={tab() === "lyrics"}>
+          <button
+            class="icon-btn size-7 opacity-70 hover:opacity-100 hover:bg-white/10"
+            onClick={() => setFullLyricsOpen(true)}
+            title="Pantalla completa"
+          >
+            <I.Maximize size={14} />
+          </button>
+        </Show>
       </div>
 
       {/* Contenido según pestaña */}
@@ -69,8 +72,15 @@ export function SidePanel() {
       <Show when={tab() === "lyrics"}>
         <LyricsView />
       </Show>
-      <Show when={tab() === "related"}>
-        <RelatedView />
+      <Show when={tab() === "comments"}>
+        <div class="flex flex-1 items-center justify-center p-8 text-center text-sm text-white/40">
+          Los comentarios no están disponibles en modo anónimo.
+        </div>
+      </Show>
+      <Show when={tab() === "similar"}>
+        <div class="flex flex-1 items-center justify-center p-8 text-center text-sm text-white/40">
+          Canciones y recomendaciones similares a esta pista.
+        </div>
       </Show>
     </aside>
   );
@@ -79,43 +89,41 @@ export function SidePanel() {
 function QueueView() {
   const [filter, setFilter] = createSignal("all");
   const filters = [
-    { id: "all", label: "All" },
-    { id: "chill", label: "Chill" },
-    { id: "familiar", label: "Familiar" },
-    { id: "party", label: "Party" },
-    { id: "workout", label: "Workout" },
-    { id: "discover", label: "Discover" },
-    { id: "popular", label: "Popular" },
-    { id: "deep", label: "Deep cuts" },
+    { id: "all", label: "Todo" },
+    { id: "discover", label: "Canciones por descubrir" },
+    { id: "energize", label: "Energizante" },
+    { id: "workout", label: "Entrenamiento" },
+    { id: "electronic", label: "Electrónica" },
+    { id: "jpop", label: "J-pop" },
   ];
 
   return (
     <div class="flex flex-1 flex-col overflow-hidden">
-      {/* Subcabecera: PLAYING FROM Your Queue + Save Button */}
+      {/* Subcabecera: REPRODUCIENDO DESDE + Mix de... + Guardar */}
       <div class="px-5 pt-4 pb-2">
         <div class="flex items-center justify-between">
-          <div>
-            <span class="text-[10.5px] font-bold uppercase tracking-widest text-white/45">
-              PLAYING FROM
+          <div class="min-w-0 pr-2">
+            <span class="text-[10px] font-bold uppercase tracking-widest text-white/45">
+              REPRODUCIENDO DESDE
             </span>
-            <div class="text-[17px] font-extrabold text-white tracking-tight leading-tight">
-              Your Queue
+            <div class="text-[16px] font-bold text-white tracking-tight leading-tight truncate">
+              {playback.track ? `Mix de ${playback.track.title}` : "Tu cola de reproducción"}
             </div>
           </div>
-          <button class="flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-3.5 py-1.5 text-xs font-semibold text-white border border-white/10 transition-all shadow-sm">
+          <button class="flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-4 py-1.5 text-xs font-semibold text-white border border-white/10 transition-all shadow-sm">
             <I.Plus size={13} />
-            Save
+            Guardar
           </button>
         </div>
 
-        {/* Píldoras de filtro horizontales */}
+        {/* Píldoras de filtro horizontales (Image 2) */}
         <div class="mt-3 flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
           <For each={filters}>
             {(f) => (
               <button
-                class="shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition-all border"
+                class="shrink-0 rounded-lg px-3.5 py-1 text-xs font-semibold transition-all border"
                 classList={{
-                  "bg-white/20 border-white/25 text-white shadow-sm": filter() === f.id,
+                  "bg-white/20 border-white/30 text-white shadow-sm": filter() === f.id,
                   "bg-white/[0.04] border-white/5 text-white/55 hover:text-white hover:bg-white/10":
                     filter() !== f.id,
                 }}
@@ -129,37 +137,37 @@ function QueueView() {
       </div>
 
       {/* Lista de pistas de la cola */}
-      <div class="scroll-area flex-1 px-3 py-2 space-y-1">
+      <div class="scroll-area flex-1 px-3 py-2 space-y-1 overflow-y-auto">
         <Show
           when={playback.queue.length > 0}
-          fallback={<Empty>Your queue is empty.</Empty>}
+          fallback={<Empty>La cola de reproducción está vacía.</Empty>}
         >
           <For each={playback.queue}>
             {(t, i) => {
               const isCurrent = () => i() === playback.queueIndex;
               return (
                 <div
-                  class="group flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-150 border cursor-pointer select-none"
+                  class="group flex w-full items-center gap-3.5 rounded-xl px-3 py-2.5 text-left transition-all duration-150 border cursor-pointer select-none"
                   classList={{
-                    "bg-white/[0.14] border-white/15 shadow-md": isCurrent(),
-                    "border-transparent hover:bg-white/[0.07] hover:border-white/5": !isCurrent(),
+                    "bg-white/[0.12] border-white/15 shadow-sm": isCurrent(),
+                    "border-transparent hover:bg-white/[0.06] hover:border-white/5": !isCurrent(),
                   }}
                   onClick={() => api.jumpTo(i())}
                 >
                   {/* Portada miniatura */}
-                  <div class="relative size-10 shrink-0 rounded-lg overflow-hidden ring-1 ring-white/15 shadow-sm">
+                  <div class="relative size-11 shrink-0 rounded-lg overflow-hidden ring-1 ring-white/15 shadow-sm">
                     <Show
                       when={t.thumbnail}
                       fallback={<div class="size-full bg-white/10" />}
                     >
                       <img
-                        src={thumbAt(t.thumbnail, 80)!}
+                        src={thumbAt(t.thumbnail, 96)!}
                         alt=""
                         class="size-full object-cover"
                       />
                     </Show>
 
-                    {/* Icono de sonido sobre la portada si es la actual */}
+                    {/* Icono de sonido animado si es la actual */}
                     <Show when={isCurrent()}>
                       <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
                         <EqualizerWave playing={playback.playing} />
@@ -178,22 +186,22 @@ function QueueView() {
                     >
                       {t.title}
                     </div>
-                    <div class="truncate text-[11.5px] text-white/55 font-medium mt-0.5">
+                    <div class="truncate text-[12px] text-white/55 font-medium mt-0.5">
                       {t.author}
                     </div>
                   </div>
 
-                  {/* Duración y botón de más opciones */}
+                  {/* Duración */}
                   <div class="flex items-center gap-2">
-                    <span class="text-[11.5px] tabular-nums font-medium text-white/50">
-                      3:21
+                    <span class="text-xs tabular-nums font-medium text-white/60">
+                      {isCurrent() && playback.durationMs ? fmtTime(playback.durationMs) : "3:21"}
                     </span>
                     <button
                       class="icon-btn size-7 text-white/40 group-hover:text-white/80 hover:!bg-white/10"
                       onClick={(e) => {
                         e.stopPropagation();
                       }}
-                      title="More options"
+                      title="Más opciones"
                     >
                       <I.More size={15} />
                     </button>
@@ -237,22 +245,22 @@ function LyricsView() {
   );
 
   return (
-    <div class="scroll-area flex-1 px-6 py-10 overflow-y-auto">
+    <div class="scroll-area flex-1 px-6 py-8 overflow-y-auto">
       <Show
         when={!lyricsLoading()}
         fallback={
           <div class="flex h-full items-center justify-center text-sm text-white/50 animate-pulse">
-            Loading lyrics...
+            Cargando letra...
           </div>
         }
       >
         <Show
           when={lyrics()?.lines?.length}
           fallback={
-            <Empty>No lyrics available for this song.</Empty>
+            <Empty>No hay letra disponible para esta canción.</Empty>
           }
         >
-          <div class="space-y-6 py-16">
+          <div class="space-y-6 py-12">
             <For each={lyrics()!.lines}>
               {(line, i) => {
                 const isActive = () => i() === activeIndex();
@@ -261,9 +269,9 @@ function LyricsView() {
                     ref={(el) => lineRefs.set(i(), el)}
                     class="cursor-pointer transition-all duration-300 select-none text-left"
                     classList={{
-                      "text-white font-extrabold text-[21px] scale-[1.03] origin-left [text-shadow:0_0_20px_rgba(255,255,255,0.45)]":
+                      "text-white font-extrabold text-[20px] scale-[1.02] origin-left [text-shadow:0_0_20px_rgba(255,255,255,0.45)]":
                         isActive(),
-                      "text-white/35 font-medium text-[16px] blur-[0.4px] hover:text-white/70 hover:opacity-90":
+                      "text-white/35 font-medium text-[16px] hover:text-white/70 hover:opacity-90":
                         !isActive(),
                     }}
                     onClick={() => api.seek(line.startMs)}
@@ -280,17 +288,9 @@ function LyricsView() {
   );
 }
 
-function RelatedView() {
-  return (
-    <div class="flex flex-1 items-center justify-center p-8 text-center text-sm text-white/40">
-      Similar songs and recommendations will appear here.
-    </div>
-  );
-}
-
 function EqualizerWave(p: { playing: boolean }) {
   return (
-    <div class="flex items-end gap-[2px] h-3 w-3 text-white">
+    <div class="flex items-end gap-[2px] h-3.5 w-3.5 text-white">
       <span
         class="w-[2px] bg-current rounded-full transition-all duration-300"
         classList={{

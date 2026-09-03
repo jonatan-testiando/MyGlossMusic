@@ -3,8 +3,18 @@ import { TitleBar, Sidebar, HomeFeed, SearchView, LibraryView, Diagnostics } fro
 import { PlayerBar } from "./components/PlayerBar";
 import { SidePanel } from "./components/SidePanel";
 import { FullScreenLyrics } from "./components/FullScreenLyrics";
-import { initStore, palette, playback, view, fullLyricsOpen, coverUrl } from "./lib/store";
+import {
+  initStore,
+  palette,
+  playback,
+  view,
+  fullLyricsOpen,
+  coverUrl,
+  playerViewOpen,
+  setPlayerViewOpen,
+} from "./lib/store";
 import { thumbAt } from "./lib/api";
+import * as I from "./components/Icons";
 import "./styles.css";
 
 export default function App() {
@@ -34,62 +44,70 @@ export default function App() {
       <TitleBar />
 
       {/* Contenedor central de navegación y área principal */}
-      <div class="flex flex-1 min-h-0 overflow-hidden">
+      <div class="relative flex flex-1 min-h-0 overflow-hidden">
         {/* Barra lateral de navegación sin marco */}
         <Sidebar />
 
-        {/* Área principal fluida y abierta */}
-        <main class="flex-1 min-w-0 h-full overflow-hidden flex">
-          <Show when={view() === "home"}>
-            <Show
-              when={playback.track}
-              fallback={<HomeFeed />}
-            >
-              {/* Vista 2 Columnas idéntica a 7.webp / 9.mp4 */}
-              <div class="flex-1 flex flex-col items-center justify-center p-8 min-w-0">
-                {/* Selector Song / Video */}
-                <div class="flex items-center gap-1 rounded-full bg-black/40 backdrop-blur-md p-1 border border-white/10 shadow-lg mb-6">
-                  <button class="rounded-full px-5 py-1 text-xs font-bold bg-white/20 text-white shadow-sm">
-                    Song
-                  </button>
-                  <button class="rounded-full px-5 py-1 text-xs font-semibold text-white/50 hover:text-white/80 transition-colors">
-                    Video
-                  </button>
-                </div>
-
-                {/* Carátula grande (max 480px) con esquinas redondeadas 22px y sombra profunda */}
-                <div class="relative max-w-[480px] w-full aspect-square">
-                  <img
-                    src={coverUrl()!}
-                    alt=""
-                    class="w-full h-full rounded-[22px] object-cover shadow-[0_30px_70px_-15px_rgba(0,0,0,0.85)] ring-1 ring-white/15 transition-transform duration-500"
-                    classList={{ "scale-[0.98] opacity-90": !playback.playing }}
-                  />
-                </div>
+        {/* Área principal fluida */}
+        <main class="flex-1 min-w-0 h-full overflow-hidden flex relative">
+          {/* 1. Vista de Reproducción / Now Playing (Image 2) */}
+          <Show when={playerViewOpen() && playback.track}>
+            {/* Columna Izquierda: Carátula panorámica 16:9 centrada */}
+            <div class="flex-1 flex items-center justify-center p-6 min-w-0">
+              <div class="relative max-w-[620px] w-full aspect-video">
+                <img
+                  src={coverUrl()!}
+                  alt=""
+                  class="w-full h-full rounded-2xl object-cover shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] ring-1 ring-white/15 transition-transform duration-500"
+                  classList={{ "scale-[0.98] opacity-90": !playback.playing }}
+                />
               </div>
+            </div>
 
-              {/* Columna Derecha: Tarjeta de Cristal UP NEXT / LYRICS */}
-              <div class="h-full py-4 pr-6">
-                <SidePanel />
+            {/* Columna Derecha: Tarjeta de Cristal Flotante (Image 2) */}
+            <div class="h-full py-4 pr-7">
+              <SidePanel />
+            </div>
+          </Show>
+
+          {/* 2. Vista de Exploración / Navegación (Image 3) */}
+          <Show when={!playerViewOpen() || !playback.track}>
+            <Show when={view() === "home"}>
+              <HomeFeed />
+            </Show>
+            <Show when={view() === "search"}>
+              <div class="flex-1 h-full overflow-hidden">
+                <SearchView />
+              </div>
+            </Show>
+            <Show when={view() === "library"}>
+              <div class="flex-1 h-full overflow-hidden p-6">
+                <LibraryView />
+              </div>
+            </Show>
+            <Show when={view() === "diagnostics"}>
+              <div class="flex-1 h-full overflow-hidden p-6">
+                <Diagnostics />
               </div>
             </Show>
           </Show>
 
-          <Show when={view() === "search"}>
-            <div class="flex-1 h-full overflow-hidden">
-              <SearchView />
-            </div>
-          </Show>
-
-          <Show when={view() === "library"}>
-            <div class="flex-1 h-full overflow-hidden p-6">
-              <LibraryView />
-            </div>
-          </Show>
-
-          <Show when={view() === "diagnostics"}>
-            <div class="flex-1 h-full overflow-hidden p-6">
-              <Diagnostics />
+          {/* Miniplayer flotante en la esquina inferior derecha (Image 3) */}
+          <Show when={!playerViewOpen() && playback.track}>
+            <div
+              class="absolute bottom-6 right-8 z-30 w-64 aspect-video rounded-2xl overflow-hidden ring-1 ring-white/20 shadow-[0_20px_45px_rgba(0,0,0,0.8)] cursor-pointer group bg-black/60 backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:ring-white/40"
+              onClick={() => setPlayerViewOpen(true)}
+              title="Volver a la canción"
+            >
+              <img
+                src={coverUrl()!}
+                alt=""
+                class="size-full object-cover"
+              />
+              <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-white font-medium text-xs">
+                <I.Maximize size={18} />
+                <span>Ampliar</span>
+              </div>
             </div>
           </Show>
         </main>

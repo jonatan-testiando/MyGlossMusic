@@ -38,6 +38,7 @@ export const [resultsLabel, setResultsLabel] = createSignal<string | null>(null)
 export const [lyrics, setLyrics] = createSignal<Lyrics | null>(null);
 export const [lyricsLoading, setLyricsLoading] = createSignal(false);
 export const [fullLyricsOpen, setFullLyricsOpen] = createSignal(false);
+export const [playerViewOpen, setPlayerViewOpen] = createSignal(true);
 
 /**
  * Posicion local interpolada.
