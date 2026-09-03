@@ -17,22 +17,28 @@ YouTube cambia algo, solo hay que tocar un crate.
 
 ## Limitación conocida y grave
 
-**La reproducción se corta a los ~65 segundos en la mayoría de canciones.**
+**La reproducción se corta a los ~48–65 segundos en casi todas las canciones.**
 
-Medido con `ytm-spike limits` sobre 6 vídeos: googlevideo sirve exactamente
-1 MiB (~65 s en itag 140) y devuelve 403 para el resto si la petición no lleva
-un **poToken** (token de atestación de BotGuard). No se arregla reintentando,
-ni re-resolviendo la URL, ni con `alr=yes`, ni cambiando cabeceras — todo eso
-está probado y descartado en `crates/ytm-spike/src/bench.rs`.
+Se ha investigado a fondo y está todo medido y reproducible con
+`ytm-spike` (comandos `limits`, `clientlimits`, `strip`, `headers`, `rawurl`).
+Resumen de lo que se sabe:
 
-La Fase 0 se validó con `dQw4w9WgXcQ`, que resulta ser una excepción y se
-descarga entero. Fue un error de muestreo: se eligió por estar siempre
-disponible, y esa misma propiedad lo hace anormalmente permisivo.
+1. Sin **poToken**, googlevideo sirve 1 MiB y devuelve 403.
+2. El poToken, la firma `sig` y el parámetro `n` solo los produce el JavaScript
+   de YouTube. Un **webview oculto** (`minter.rs`) los acuña en ~2 s, en
+   silencio, y la URL resultante se descarga desde Rust. Esto funciona.
+3. Pero esa URL solo autoriza los bytes **que el reproductor de la página ya
+   había pedido**: la autorización es *posicional* y avanza con la reproducción
+   en vivo. Pedir un offset más alto devuelve 403; pedir el mismo offset ocho
+   veces devuelve 200. Y el reproductor de YouTube bufferiza solo ~2–3 s por
+   delante, así que no se le puede dejar descargar por nosotros.
 
-Para resolverlo hay que generar un poToken ejecutando el desafío JavaScript de
-BotGuard. La buena noticia es que Tauri ya embebe un webview, así que se puede
-hacer en una ventana oculta sin añadir dependencias nuevas. Es el siguiente
-trabajo pendiente, y el más importante.
+Por tanto, hoy no hay forma de obtener una pista entera sin reimplementar el
+protocolo de autorización en vivo de YouTube (UMP / `rbuf` / `cps`). Es un
+protocolo activamente defendido y que cambia con frecuencia.
+
+**Decisión pendiente** (ver ROADMAP): implementar ese protocolo, o delegar la
+extracción en `yt-dlp` como binario externo detrás del trait de `ytm-source`.
 
 ## Estado
 

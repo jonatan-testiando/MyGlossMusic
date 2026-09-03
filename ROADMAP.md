@@ -158,11 +158,15 @@ Lo que de verdad diferencia el proyecto.
 
 ## Pendiente, por orden de valor
 
-0. **poToken — BLOQUEANTE.** Sin él la reproducción se corta a los ~65 s en casi
-   todo. Hay que ejecutar el desafío de BotGuard; Tauri ya embebe un webview,
-   así que puede hacerse en una ventana oculta sin dependencias nuevas.
-   Descartado y medido: reintentos, re-resolver la URL, `alr=yes`, `rn`/`rbuf`,
-   User-Agent del cliente y GET completo. Todo en `bench.rs`.
+0. **Extracción completa — BLOQUEANTE.** El poToken ya se acuña (webview
+   oculto, ~2 s, en silencio) y Opus ya se decodifica. Lo que falta es que
+   googlevideo autorice la pista entera: hoy solo autoriza lo que el reproductor
+   en vivo ha pedido (~48 s). Dos caminos, a decidir:
+   - **A. Implementar el protocolo en vivo** (UMP, `rbuf`, `cps`): nativo y sin
+     dependencias, pero es reverse-engineering de algo activamente defendido.
+   - **B. `yt-dlp` como extractor externo** detrás del trait de `ytm-source`:
+     funciona mañana, lo mantiene mucha gente, y el resto de la app (motor,
+     caché, UI, letras, teclas) no cambia. Coste: un binario de ~15 MB.
 1. **CI que detecte roturas de YouTube** antes que el usuario.
 2. **Normalización de volumen** con `loudness_db`, que ya se extrae.
 3. **Renovación de URL caducada** (~6 h) sin cortar la reproducción.
