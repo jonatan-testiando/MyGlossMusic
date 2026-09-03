@@ -53,6 +53,18 @@ export const [searchFilter, setSearchFilter] = createSignal<string | null>(null)
 /** Token de la siguiente página, o `null` si ya no hay más. */
 export const [searchMoreToken, setSearchMoreToken] = createSignal<string | null>(null);
 export const [loadingMore, setLoadingMore] = createSignal(false);
+/**
+ * Filtro con el que seguir cuando "Todo" se acaba.
+ *
+ * Medido sobre una búsqueda real: "Todo" devuelve 27 resultados y NO trae
+ * token de continuación — el tope lo pone YouTube, no nosotros. La profundidad
+ * está en los filtros: "Canciones" da 100 en cinco páginas y sigue.
+ *
+ * Así que al agotarse "Todo" se continúa por el filtro de canciones. Es una
+ * decisión nuestra, no algo que haga YouTube: su interfaz te obliga a pulsar la
+ * pestaña.
+ */
+const [searchOverflow, setSearchOverflow] = createSignal<string | null>(null);
 export const [searching, setSearching] = createSignal(false);
 export const [query, setQuery] = createSignal("");
 export const [view, setView] = createSignal<"home" | "search" | "library" | "diagnostics">("home");
@@ -273,6 +285,9 @@ export async function runSearch(q: string) {
       // Los filtros los define YouTube en la respuesta, no nosotros.
       setSearchChips(page.chips);
       setSearchMoreToken(page.continuation);
+      setSearchOverflow(
+        page.continuation ? null : (chipDeCanciones(page.chips)?.params ?? null),
+      );
     }
   } catch (e) {
     console.error("busqueda fallida", e);
@@ -346,6 +361,12 @@ export async function applySearchFilter(params: string | null) {
     // conservan los que había, para no dejar la fila en blanco.
     if (page.chips.length) setSearchChips(page.chips);
     setSearchMoreToken(page.continuation);
+    // Solo "Todo" necesita el relevo; un filtro concreto ya pagina solo.
+    setSearchOverflow(
+      params === null && !page.continuation
+        ? (chipDeCanciones(page.chips.length ? page.chips : searchChips())?.params ?? null)
+        : null,
+    );
   } catch (e) {
     console.error("no se pudo filtrar", e);
   } finally {
@@ -355,21 +376,53 @@ export async function applySearchFilter(params: string | null) {
 
 /** Siguiente página de resultados, si la hay. */
 export async function loadMoreResults() {
+  if (loadingMore()) return;
   const token = searchMoreToken();
-  if (!token || loadingMore()) return;
+  const relevo = searchOverflow();
+  if (!token && !relevo) return;
+
   setLoadingMore(true);
   try {
-    const page = await api.searchMore(token);
-    // Se anexa, no se sustituye: es paginación, no una búsqueda nueva.
-    setResults([...results(), ...page.items]);
+    let page;
+    if (token) {
+      page = await api.searchMore(token);
+    } else {
+      // "Todo" se acabó: se sigue por el filtro de canciones. Se consume una
+      // sola vez; a partir de aquí manda su propia continuación.
+      page = await api.search(query().trim(), relevo!);
+      setSearchOverflow(null);
+    }
+    // Se anexa, no se sustituye: es paginación, no una búsqueda nueva. Y se
+    // deduplica porque el relevo repite lo que "Todo" ya había mostrado.
+    setResults(sinRepetir([...results(), ...page.items]));
     setSearchMoreToken(page.continuation);
   } catch (e) {
     console.error("no se pudieron cargar mas resultados", e);
     // Sin token no se reintenta en bucle contra un servidor que ya dijo que no.
     setSearchMoreToken(null);
+    setSearchOverflow(null);
   } finally {
     setLoadingMore(false);
   }
+}
+
+/**
+ * El filtro de canciones, buscado por sus `params` y no por su etiqueta.
+ *
+ * La etiqueta viene traducida al idioma de la petición; los `params` no. El
+ * prefijo `EgWKAQII` es el que YouTube usa para "solo canciones".
+ */
+function chipDeCanciones(chips: SearchChip[]): SearchChip | undefined {
+  return chips.find((c) => c.params.startsWith("EgWKAQII"));
+}
+
+/** Quita repetidos conservando el orden de aparición. */
+function sinRepetir(items: ShelfItem[]): ShelfItem[] {
+  const vistos = new Set<string>();
+  return items.filter((i) => {
+    const clave = `${i.kind}:${i.id}`;
+    return vistos.has(clave) ? false : vistos.add(clave);
+  });
 }
 
 /** Una pista de playlist o de radio, con la forma común de la interfaz. */

@@ -190,12 +190,15 @@ export const mockApi = {
             { kind: "playlist" as const, id: "VLPL1", title: "Kastra Mix", subtitle: "Lista • 1,2 M", thumbnail: COVER, duration: null },
           ],
     ),
+    // El prefijo `EgWKAQII` es el que YouTube usa de verdad para "canciones";
+    // el relevo de la búsqueda lo busca por ahí, no por la etiqueta.
     chips: [
-      { label: "Canciones", params: "p-canciones" },
-      { label: "Vídeos", params: "p-videos" },
-      { label: "Artistas", params: "p-artistas" },
-      { label: "Álbumes", params: "p-albumes" },
+      { label: "Canciones", params: "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D" },
+      { label: "Vídeos", params: "EgWKAQIQAQ%3D%3D" },
+      { label: "Artistas", params: "EgWKAQIgAQ%3D%3D" },
+      { label: "Álbumes", params: "EgWKAQIYAQ%3D%3D" },
     ],
+    // Como en la realidad: "Todo" no pagina, los filtros sí.
     continuation: params ? "token-mock" : null,
   }),
   searchMore: async () => ({

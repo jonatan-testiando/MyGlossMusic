@@ -613,6 +613,24 @@ export function HomeFeed() {
 
 /* ------------------------------------------------------------ Search results */
 
+function SkeletonList() {
+  return (
+    <div class="flex flex-col gap-0.5">
+      <For each={Array(8).fill(0)}>
+        {(_, i) => (
+          <div class="flex items-center gap-3 px-3 py-2" style={{ opacity: String(1 - i() * 0.1) }}>
+            <div class="size-11 shrink-0 animate-pulse rounded-lg bg-white/8" />
+            <div class="flex-1">
+              <div class="h-3 w-2/5 animate-pulse rounded bg-white/8" />
+              <div class="mt-2 h-2.5 w-1/4 animate-pulse rounded bg-white/6" />
+            </div>
+          </div>
+        )}
+      </For>
+    </div>
+  );
+}
+
 /** Cuánto antes del final se empieza a pedir la página siguiente, en píxeles. */
 const MARGEN_CARGA = 600;
 
@@ -786,23 +804,6 @@ export function SearchView() {
   );
 }
 
-function SkeletonList() {
-  return (
-    <div class="flex flex-col gap-0.5">
-      <For each={Array(8).fill(0)}>
-        {(_, i) => (
-          <div class="flex items-center gap-3 px-3 py-2" style={{ opacity: String(1 - i() * 0.1) }}>
-            <div class="size-11 shrink-0 animate-pulse rounded-lg bg-white/8" />
-            <div class="flex-1">
-              <div class="h-3 w-2/5 animate-pulse rounded bg-white/8" />
-              <div class="mt-2 h-2.5 w-1/4 animate-pulse rounded bg-white/6" />
-            </div>
-          </div>
-        )}
-      </For>
-    </div>
-  );
-}
 
 /* ---------------------------------------------------------------- Library */
 

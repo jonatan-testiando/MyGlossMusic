@@ -59,51 +59,42 @@ async fn main() -> Result<()> {
             let q = args[1..].join(" ");
             anyhow::ensure!(!q.is_empty(), "falta la consulta");
             let it = InnerTube::new()?;
-            let hits = it.search(&q, ytm_source::Filter::Songs).await?;
-            println!("
-  {} resultados para: {q}
-", hits.len());
-            for (i, h) in hits.iter().take(10).enumerate() {
-                println!("  {:>2}. {}", i + 1, h.title);
-                println!("      {} [{}]  {}", h.subtitle,
-                    h.duration.as_deref().unwrap_or("?"), h.video_id);
-                println!("      thumb: {}", h.thumbnail.as_deref().unwrap_or("(ninguna)"));
-            }
-            println!();
-            Ok(())
-        }
-        // Lo mismo que `probe` es para reproducir, esto es para navegar: si el
-        // inicio o una pagina de artista se quedan en blanco, aqui se ve en 10
-        // segundos si YouTube cambio los renderers o si el fallo es nuestro.
-        "browse" => {
-            let id = args.get(1).map(String::as_str).unwrap_or(ytm_source::browse::HOME);
-            let it = InnerTube::new()?;
-            let page = it.browse(id, args.get(2).map(String::as_str)).await?;
 
+            let page = it.search_page(&q, None).await?;
+            println!("
+  TODO: {} resultados para: {q}", page.items.len());
+            let mut tipos = std::collections::BTreeMap::new();
+            for i in &page.items {
+                *tipos.entry(format!("{:?}", i.kind)).or_insert(0) += 1;
+            }
+            println!("  por tipo: {tipos:?}");
+            println!(
+                "  continuacion: {}",
+                if page.continuation.is_some() { "si" } else { "NO" }
+            );
+            println!("  filtros: {}", page.chips.iter().map(|c| c.label.as_str())
+                .collect::<Vec<_>>().join(", "));
+
+            // Y cuanto da paginando el primer filtro, que es lo que de verdad
+            // decide si la lista se queda corta.
+            for chip in page.chips.iter().filter(|c| {
+                matches!(c.label.as_str(), "Canciones" | "Vídeos" | "Álbumes")
+            }) {
+                let mut p = it.search_page(&q, Some(&chip.params)).await?;
+                let mut total = p.items.len();
+                let mut paginas = 1;
+                while let Some(tok) = p.continuation.clone() {
+                    if paginas >= 5 {
+                        break;
+                    }
+                    p = it.search_more(&tok).await?;
+                    total += p.items.len();
+                    paginas += 1;
+                }
+                println!("
+  {}: {total} resultados en {paginas} paginas", chip.label);
+            }
             println!();
-            if let Some(t) = &page.title {
-                println!("  {t}");
-                if let Some(s) = &page.subtitle {
-                    println!("  {s}");
-                }
-                println!();
-            }
-            if page.shelves.is_empty() {
-                println!("  SIN ESTANTERIAS. O el browseId no existe, o cambiaron los renderers.");
-            }
-            for shelf in &page.shelves {
-                println!("  {} ({} elementos)", shelf.title, shelf.items.len());
-                for item in shelf.items.iter().take(4) {
-                    println!(
-                        "      {:?} {:<14} {}  |  {}",
-                        item.kind, item.id, item.title, item.subtitle
-                    );
-                }
-                if shelf.items.len() > 4 {
-                    println!("      ... y {} mas", shelf.items.len() - 4);
-                }
-                println!();
-            }
             Ok(())
         }
         "radio" => {
