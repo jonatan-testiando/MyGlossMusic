@@ -116,7 +116,7 @@ export function Sidebar() {
 
 export function NowPlaying() {
   return (
-    <div class="fade-in flex h-full flex-col items-center justify-center gap-6 px-8">
+    <div class="fade-in flex h-full flex-col items-center justify-center gap-5 px-8">
       <Show
         when={playback.track}
         fallback={
@@ -126,24 +126,34 @@ export function NowPlaying() {
           </div>
         }
       >
-        <div class="w-full max-w-[420px]">
+        {/* Selector Canción / Vídeo estilo DemoApp */}
+        <div class="flex items-center gap-1 rounded-full bg-white/[0.06] p-1 border border-white/5 shadow-inner">
+          <button class="rounded-full px-3.5 py-1 text-[11px] font-semibold bg-white/20 text-white shadow-sm">
+            Canción
+          </button>
+          <button class="rounded-full px-3.5 py-1 text-[11px] font-semibold text-white/40 hover:text-white/75 transition-colors">
+            Vídeo
+          </button>
+        </div>
+
+        <div class="w-full max-w-[380px]">
           <Show
             when={coverUrl()}
-            fallback={<div class="cover bg-white/8" classList={{ paused: !playback.playing }} />}
+            fallback={<div class="cover rounded-2xl bg-white/8 shadow-2xl" classList={{ paused: !playback.playing }} />}
           >
             <img
               src={coverUrl()!}
               alt={`Portada de ${playback.track!.title}`}
-              class="cover"
+              class="cover rounded-2xl shadow-[0_24px_50px_-12px_rgba(0,0,0,0.75)] ring-1 ring-white/10"
               classList={{ paused: !playback.playing }}
             />
           </Show>
         </div>
         <div class="max-w-[440px] text-center">
-          <h1 class="text-balance text-[22px] font-semibold leading-tight tracking-tight">
+          <h1 class="text-balance text-[22px] font-bold leading-tight tracking-tight">
             {playback.track!.title}
           </h1>
-          <p class="mt-1.5 text-[13px] opacity-55">{playback.track!.author}</p>
+          <p class="mt-1 text-[13px] opacity-55 font-medium">{playback.track!.author}</p>
         </div>
       </Show>
     </div>

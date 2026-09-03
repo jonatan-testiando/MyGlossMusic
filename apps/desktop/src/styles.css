@@ -94,10 +94,10 @@ body {
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(circle at 85% 15%, rgba(139, 127, 212, 0.22), transparent 50%),
-    radial-gradient(circle at 15% 85%, rgba(56, 189, 248, 0.15), transparent 45%),
-    radial-gradient(120% 90% at 50% 0%, transparent 0%, var(--bg) 80%),
-    linear-gradient(to bottom, rgb(0 0 0 / 0.2), rgb(0 0 0 / 0.7));
+    radial-gradient(circle at 85% 15%, var(--accent), transparent 55%),
+    radial-gradient(circle at 15% 85%, rgba(56, 189, 248, 0.16), transparent 50%),
+    radial-gradient(120% 90% at 50% 0%, transparent 0%, var(--bg) 82%),
+    linear-gradient(to bottom, rgb(0 0 0 / 0.15), rgb(0 0 0 / 0.75));
   transition: background 900ms var(--ease);
   pointer-events: none;
 }
@@ -259,6 +259,14 @@ body {
 .scroll-area::-webkit-scrollbar-thumb {
   background: rgb(255 255 255 / 0.16);
   border-radius: 999px;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 .fade-in {

@@ -2,7 +2,8 @@ import { Show, createEffect, onMount } from "solid-js";
 import { TitleBar, Sidebar, NowPlaying, SearchView, LibraryView, Diagnostics } from "./components/Views";
 import { PlayerBar } from "./components/PlayerBar";
 import { SidePanel } from "./components/SidePanel";
-import { initStore, palette, playback, view } from "./lib/store";
+import { FullScreenLyrics } from "./components/FullScreenLyrics";
+import { initStore, palette, playback, view, fullLyricsOpen } from "./lib/store";
 import { thumbAt } from "./lib/api";
 import "./styles.css";
 
@@ -20,9 +21,7 @@ export default function App() {
     root.setProperty("--fg", p.foreground);
   });
 
-  // Portada minuscula estirada a toda la ventana: el reescalado del navegador
-  // hace de desenfoque y no cuesta GPU.
-  const bg = () => thumbAt(playback.track?.thumbnail, 48);
+  const bg = () => thumbAt(playback.track?.thumbnail, 120);
 
   return (
     <div class="app-shell flex flex-col">
@@ -53,6 +52,10 @@ export default function App() {
       </main>
 
       <PlayerBar />
+
+      <Show when={fullLyricsOpen()}>
+        <FullScreenLyrics />
+      </Show>
     </div>
   );
 }

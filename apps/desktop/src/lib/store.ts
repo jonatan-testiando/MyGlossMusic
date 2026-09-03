@@ -1,6 +1,6 @@
 import { createSignal, createEffect, on } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { api, type PlaybackState, type Palette, type SearchResult, thumbAt } from "./api";
+import { api, type PlaybackState, type Palette, type SearchResult, type Lyrics, thumbAt } from "./api";
 
 const EMPTY_STATE: PlaybackState = {
   track: null,
@@ -33,8 +33,11 @@ export const [searching, setSearching] = createSignal(false);
 export const [query, setQuery] = createSignal("");
 export const [view, setView] = createSignal<"home" | "search" | "library" | "diagnostics">("home");
 export const [isFavorite, setIsFavorite] = createSignal(false);
-/** Cabecera de la vista de resultados cuando lo cargado es una playlist. */
 export const [resultsLabel, setResultsLabel] = createSignal<string | null>(null);
+
+export const [lyrics, setLyrics] = createSignal<Lyrics | null>(null);
+export const [lyricsLoading, setLyricsLoading] = createSignal(false);
+export const [fullLyricsOpen, setFullLyricsOpen] = createSignal(false);
 
 /**
  * Posicion local interpolada.
@@ -103,6 +106,38 @@ export function initStore() {
           .getPalette(thumb)
           .then(setPalette)
           .catch(() => setPalette(DEFAULT_PALETTE));
+      },
+    ),
+  );
+
+  // La letra se pide una sola vez por pista y se almacena en el store.
+  let lastLyricsVideoId = "";
+  createEffect(
+    on(
+      () => playback.track?.videoId,
+      async (id) => {
+        if (!id || id === lastLyricsVideoId) return;
+        lastLyricsVideoId = id;
+        const t = playback.track;
+        if (!t) {
+          setLyrics(null);
+          return;
+        }
+        setLyricsLoading(true);
+        try {
+          const res = await api.getLyrics(t.title, t.author, playback.durationMs);
+          if (lastLyricsVideoId === id) {
+            setLyrics(res);
+          }
+        } catch {
+          if (lastLyricsVideoId === id) {
+            setLyrics(null);
+          }
+        } finally {
+          if (lastLyricsVideoId === id) {
+            setLyricsLoading(false);
+          }
+        }
       },
     ),
   );
