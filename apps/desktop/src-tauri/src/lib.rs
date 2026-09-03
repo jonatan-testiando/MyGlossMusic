@@ -7,6 +7,7 @@ mod db;
 mod discord;
 mod lyrics;
 mod media;
+mod minter;
 mod palette;
 
 use std::sync::Arc;
@@ -174,6 +175,15 @@ async fn get_lyrics(
     Ok(found)
 }
 
+/// Acuna la URL de audio de una pista en un webview oculto.
+///
+/// Es la unica forma de obtener una URL sin el tope de 1 MiB: `poToken`, `sig` y
+/// `n` los produce el JavaScript de YouTube. Ver `minter.rs`.
+#[tauri::command]
+async fn mint_url(app: tauri::AppHandle, video_id: String) -> Result<String, String> {
+    minter::mint(&app, &video_id).await.map_err(|e| e.to_string())
+}
+
 // --------------------------------------------------------------------------
 // Biblioteca local
 // --------------------------------------------------------------------------
@@ -338,6 +348,45 @@ pub fn run() {
             }
 
             media::init(app.handle(), engine.clone());
+
+            // Sonda de acunacion: `POSIBLE_MINT_TEST=<videoId>` prueba el
+            // webview oculto y registra el resultado. Sirve para verificar el
+            // camino completo sin depender de la interfaz.
+            if let Ok(id) = std::env::var("POSIBLE_MINT_TEST") {
+                let h = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    let t = std::time::Instant::now();
+                    let origin = if std::env::var("POSIBLE_MINT_WATCH").is_ok() {
+                        minter::Origin::Watch
+                    } else {
+                        minter::Origin::Music
+                    };
+                    match minter::mint_from(&h, &id, origin).await {
+                        Ok(url) => {
+                            let itag = url
+                                .split("itag=")
+                                .nth(1)
+                                .and_then(|s| s.split('&').next())
+                                .unwrap_or("?")
+                                .to_string();
+                            let clen = url
+                                .split("clen=")
+                                .nth(1)
+                                .and_then(|s| s.split('&').next())
+                                .unwrap_or("?")
+                                .to_string();
+                            tracing::info!(
+                                ms = t.elapsed().as_millis() as u64,
+                                itag,
+                                clen,
+                                pot = url.contains("pot="),
+                                "MINT OK"
+                            )
+                        }
+                        Err(e) => tracing::error!(error = %e, "MINT FALLO"),
+                    }
+                });
+            }
             discord::spawn(engine.subscribe());
 
             // Reenvia cada cambio de estado del motor a la interfaz. Es un canal
@@ -411,6 +460,7 @@ pub fn run() {
             get_state,
             get_palette,
             get_lyrics,
+            mint_url,
             toggle_favorite,
             is_favorite,
             favorites,

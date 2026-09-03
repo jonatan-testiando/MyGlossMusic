@@ -63,6 +63,12 @@ async fn main() -> Result<()> {
             let url = std::fs::read_to_string(path)?;
             bench::raw_url(url.trim()).await
         }
+        "graft" => {
+            let id = video_id_arg(&args)?;
+            let vd = std::env::var("YTM_VISITOR_DATA")?;
+            let pot = std::env::var("YTM_POTOKEN")?;
+            bench::graft(&id, &vd, &pot).await
+        }
         "attestdetail" => {
             let id = video_id_arg(&args)?;
             let vd = std::env::var("YTM_VISITOR_DATA")?;

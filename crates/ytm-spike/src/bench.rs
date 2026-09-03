@@ -49,6 +49,72 @@ const CHUNK: u64 = 1_048_576; // 1 MiB
 /// `signatureCipher`) al mandarle el poToken, basta acunar el token una vez por
 /// sesion. Si todas vienen cifradas, hace falta descifrar la firma, que solo se
 /// puede hacer ejecutando el JavaScript del reproductor.
+/// Prueba si basta con PEGAR el `pot` a una URL de cliente movil.
+///
+/// `pot` no aparece en `sparams`, es decir, no forma parte de la firma. Si
+/// googlevideo lo valida por separado, se puede acunar un token una sola vez y
+/// reutilizarlo con las URLs de `android`, que si sirven AAC (itag 140) y nos
+/// ahorran tener que decodificar Opus.
+pub async fn graft(video_id: &str, visitor_data: &str, po_token: &str) -> Result<()> {
+    let it = InnerTube::new()?;
+    let client = reqwest::Client::new();
+    let att = ytm_source::Attestation {
+        visitor_data: visitor_data.to_string(),
+        po_token: po_token.to_string(),
+    };
+
+    println!("
+  Injertando `pot` en URLs de cliente movil - {video_id}
+");
+    println!("  {:<24} {:>7} {:>9} {:>9}  {}", "CLIENTE / VARIANTE", "TROZOS", "KB", "ESPERADO", "VEREDICTO");
+    println!("  {}", "-".repeat(74));
+
+    for cfg in [ytm_source::clients::ANDROID, ytm_source::clients::IOS] {
+        // Con la atestacion tambien en el cuerpo de la peticion, por si el
+        // token debe estar ligado al mismo visitorData.
+        let Ok(res) = it.player_with(video_id, cfg, Some(&att)).await else { continue };
+        let Some(streaming) = res.streaming_data else { continue };
+        let Some(fmt) = ytm_source::select::best_audio(&streaming.adaptive_formats) else { continue };
+        let Some(base) = fmt.url.clone() else { continue };
+        let expected = fmt.content_length_bytes().unwrap_or(0);
+
+        for (variante, url) in [
+            ("sin pot", base.clone()),
+            ("con &pot=", format!("{base}&pot={po_token}")),
+        ] {
+            let mut got = 0u64;
+            let mut chunks = 0;
+            loop {
+                let r = client
+                    .get(&url)
+                    .header("Range", format!("bytes={got}-{}", got + CHUNK - 1))
+                    .send()
+                    .await;
+                match r {
+                    Ok(resp) if resp.status().is_success() => {
+                        let n = resp.bytes().await.map(|b| b.len() as u64).unwrap_or(0);
+                        if n == 0 { break; }
+                        got += n;
+                        chunks += 1;
+                        if n < CHUNK || (expected > 0 && got >= expected) { break; }
+                    }
+                    _ => break,
+                }
+            }
+            let ok = expected > 0 && got >= expected;
+            println!(
+                "  {:<24} {chunks:>7} {:>9} {:>9}  {}",
+                format!("{} / {}", cfg.id, variante),
+                got / 1024,
+                expected / 1024,
+                if ok { "COMPLETO" } else { "CORTADO" }
+            );
+        }
+    }
+    println!();
+    Ok(())
+}
+
 pub async fn attest_detail(video_id: &str, visitor_data: &str, po_token: &str) -> Result<()> {
     let it = InnerTube::new()?;
     let att = ytm_source::Attestation {
