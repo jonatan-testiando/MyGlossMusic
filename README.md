@@ -15,9 +15,12 @@ Aquí no hay webview de YouTube. Se habla directamente con la API interna
 (InnerTube), se decodifica el audio en Rust y la interfaz es propia. Cuando
 YouTube cambia algo, solo hay que tocar un crate.
 
-## Limitación conocida y grave
+## Sobre la extracción (resuelto con yt-dlp)
 
-**La reproducción se corta a los ~48–65 segundos en casi todas las canciones.**
+**Verificado end-to-end: una pista de 1:30 suena entera a través de yt-dlp**, con
+el muro de 1 MiB superado. Lo que sigue es la historia de por qué hizo falta.
+
+~~La reproducción se corta a los ~48–65 segundos en casi todas las canciones.~~
 
 Se ha investigado a fondo y está todo medido y reproducible con
 `ytm-spike` (comandos `limits`, `clientlimits`, `strip`, `headers`, `rawurl`).

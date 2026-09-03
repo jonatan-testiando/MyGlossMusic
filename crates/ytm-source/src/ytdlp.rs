@@ -66,21 +66,32 @@ impl Info {
     }
 }
 
-/// Una descarga en curso.
+/// Una descarga en curso (o ya completa en cache).
 pub struct Download {
     pub info: Info,
-    child: tokio::process::Child,
+    /// `None` si la pista ya estaba en cache: no hay proceso que esperar.
+    child: Option<tokio::process::Child>,
+    /// Linea de metadatos tal cual la imprimio yt-dlp. Se guarda como marcador
+    /// de "descarga completa" y permite reconstruir `Info` en otro arranque.
+    raw: String,
 }
 
 impl Download {
     /// Espera a que yt-dlp termine. Error si el proceso fallo.
     pub async fn wait(mut self) -> Result<()> {
-        let status = self.child.wait().await.context("yt-dlp no termino")?;
+        let Some(child) = self.child.as_mut() else {
+            return Ok(());
+        };
+        let status = child.wait().await.context("yt-dlp no termino")?;
         if status.success() {
+            // Marcador de completitud. El tamano NO sirve como criterio: yt-dlp
+            // solo conoce `filesize_approx`, que casi nunca coincide con el
+            // tamano final, y sin marcador cada arranque volveria a descargar.
+            let _ = std::fs::write(ok_marker(&self.info.path), &self.raw);
             return Ok(());
         }
         let mut tail = String::new();
-        if let Some(mut err) = self.child.stderr.take() {
+        if let Some(mut err) = child.stderr.take() {
             use tokio::io::AsyncReadExt;
             let _ = err.read_to_string(&mut tail).await;
         }
@@ -133,6 +144,16 @@ impl YtDlp {
     /// sonar mientras se descarga.
     pub async fn download(&self, video_id: &str, dir: &Path) -> Result<Download> {
         std::fs::create_dir_all(dir).ok();
+
+        // Acierto de cache: marcador de una descarga completa anterior.
+        if let Some(hit) = cached(video_id, dir) {
+            tracing::debug!(video_id, "yt-dlp: en cache");
+            return Ok(hit);
+        }
+        // Sin marcador, cualquier `<id>.*` es una descarga a medias. Fuera:
+        // yt-dlp lo tomaria por "ya descargado" y dejaria la pista cortada.
+        purge_partial(video_id, dir);
+
         let template = dir.join(format!("{video_id}.%(ext)s"));
 
         // Campos que necesitamos, impresos ANTES de descargar.
@@ -153,6 +174,12 @@ impl YtDlp {
             // Windows renombrar un archivo abierto falla.
             .arg("--no-part")
             .arg("--no-mtime")
+            // Sin post-procesado. El "fixup" del contenedor escribe
+            // `<nombre>.temp.m4a` y lo renombra sobre el original, que nosotros
+            // ya tenemos abierto reproduciendo: en Windows eso es "Acceso
+            // denegado" y yt-dlp termina en error. El original decodifica bien.
+            .arg("--fixup")
+            .arg("never")
             .arg("-f")
             .arg(FORMAT)
             .arg("-o")
@@ -199,29 +226,91 @@ impl YtDlp {
         // proceso no se bloquee al escribir.
         tokio::spawn(async move { while let Ok(Some(_)) = lines.next_line().await {} });
 
-        let f: Vec<&str> = line.split(SEP).collect();
-        let get = |i: usize| f.get(i).map(|s| s.trim()).filter(|s| !s.is_empty() && *s != "NA");
-
-        let path = PathBuf::from(get(0).context("yt-dlp no dio ruta")?);
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(str::to_lowercase)
-            .or_else(|| get(2).map(str::to_lowercase))
-            .unwrap_or_else(|| "m4a".into());
-
-        let info = Info {
-            path,
-            size: get(1).and_then(|s| s.parse::<f64>().ok()).map(|s| s as u64),
-            ext,
-            acodec: get(3).map(str::to_string),
-            title: get(4).map(str::to_string),
-            author: get(5).map(str::to_string),
-            duration_ms: get(6).and_then(|s| s.parse::<f64>().ok()).map(|s| (s * 1000.0) as u64),
-            thumbnail: get(7).map(str::to_string),
-        };
+        let info = parse_info(&line)?;
         tracing::info!(video_id, ext = %info.ext, size = ?info.size, "yt-dlp descargando");
-        Ok(Download { info, child })
+        Ok(Download {
+            info,
+            child: Some(child),
+            raw: line,
+        })
+    }
+}
+
+/// Convierte la linea del `--print` en [`Info`].
+fn parse_info(line: &str) -> Result<Info> {
+    let f: Vec<&str> = line.split(SEP).collect();
+    let get = |i: usize| {
+        f.get(i)
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty() && *s != "NA")
+    };
+
+    let path = PathBuf::from(get(0).context("yt-dlp no dio ruta")?);
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_lowercase)
+        .or_else(|| get(2).map(str::to_lowercase))
+        .unwrap_or_else(|| "m4a".into());
+
+    Ok(Info {
+        path,
+        size: get(1).and_then(|s| s.parse::<f64>().ok()).map(|s| s as u64),
+        ext,
+        acodec: get(3).map(str::to_string),
+        title: get(4).map(str::to_string),
+        author: get(5).map(str::to_string),
+        duration_ms: get(6)
+            .and_then(|s| s.parse::<f64>().ok())
+            .map(|s| (s * 1000.0) as u64),
+        thumbnail: get(7).map(str::to_string),
+    })
+}
+
+/// Ruta del marcador de "descarga completa" de una pista.
+fn ok_marker(path: &Path) -> PathBuf {
+    let mut s = path.as_os_str().to_owned();
+    s.push(".ok");
+    PathBuf::from(s)
+}
+
+/// Descarga ya completa en cache, reconstruida desde su marcador.
+fn cached(video_id: &str, dir: &Path) -> Option<Download> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with(&format!("{video_id}.")) || !name.ends_with(".ok") {
+            continue;
+        }
+        let raw = std::fs::read_to_string(entry.path()).ok()?;
+        let mut info = parse_info(&raw).ok()?;
+        let meta = std::fs::metadata(&info.path).ok()?;
+        if meta.len() == 0 {
+            continue;
+        }
+        // El tamano real manda sobre el aproximado que dio yt-dlp.
+        info.size = Some(meta.len());
+        return Some(Download {
+            info,
+            child: None,
+            raw,
+        });
+    }
+    None
+}
+
+/// Borra restos `<id>.*` sin marcador: descargas interrumpidas.
+fn purge_partial(video_id: &str, dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with(&format!("{video_id}.")) {
+            let _ = std::fs::remove_file(entry.path());
+        }
     }
 }
 

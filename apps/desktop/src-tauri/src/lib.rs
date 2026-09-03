@@ -400,7 +400,7 @@ pub fn run() {
                     let t = std::time::Instant::now();
                     e.send(Command::PlayNow(id));
                     let mut last = 0u64;
-                    for _ in 0..40 {
+                    for _ in 0..100 {
                         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
                         let s = e.state();
                         if let Some(err) = &s.error {

@@ -158,8 +158,9 @@ Lo que de verdad diferencia el proyecto.
 
 ## Pendiente, por orden de valor
 
-0. **Extracción completa — integrada vía `yt-dlp` (opción B), pendiente de
-   verificar en vivo** con el binario instalado. El motor acepta ahora una
+0. **Extracción completa — RESUELTA vía `yt-dlp` (opción B), verificada
+   end-to-end** (pista de 1:30 reproducida entera; `--fixup never` porque el
+   post-procesado intentaba renombrar sobre el archivo que ya reproducimos). El motor acepta ahora una
    fuente externa que escribe el archivo de caché (`Provided::External`), con
    registro de precargas para que precargar y reproducir no abran dos descargas
    sobre el mismo archivo, y un corte de descarga ya no mata lo descargado.
