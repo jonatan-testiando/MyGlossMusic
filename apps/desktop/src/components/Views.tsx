@@ -461,6 +461,24 @@ function Shelf(p: {
   );
 }
 
+/** Página de `browse` vacía, para cuando el feed no llega. */
+const VACIO: BrowsePage = { title: null, subtitle: null, thumbnail: null, shelves: [] };
+
+/**
+ * Llama a algo que puede fallar y devuelve un valor de repuesto.
+ *
+ * Envuelve la llamada entera, no solo la promesa: un comando que todavía no
+ * existe en el backend lanza de forma síncrona, y eso se escapa de un
+ * `.catch()`.
+ */
+function seguro<T>(fn: () => Promise<T>, alternativa: T): Promise<T> {
+  try {
+    return fn().catch(() => alternativa);
+  } catch {
+    return Promise.resolve(alternativa);
+  }
+}
+
 export function HomeFeed() {
   const [historial, setHistorial] = createSignal<SavedTrack[]>([]);
   const [estantes, setEstantes] = createSignal<ShelfData[]>([]);
@@ -471,12 +489,13 @@ export function HomeFeed() {
     // Las tres fuentes van en paralelo: el historial es instantáneo (SQLite),
     // el feed y la radio tardan. Encadenarlas dejaría la pantalla en blanco
     // hasta la más lenta.
-    const hist = api.history().catch(() => [] as SavedTrack[]);
-    const feed = api
-      .home()
-      .catch(
-        (): BrowsePage => ({ title: null, subtitle: null, thumbnail: null, shelves: [] }),
-      );
+    //
+    // `seguro` y no un `.catch()` a secas porque `.catch()` solo atrapa
+    // promesas rechazadas: si la llamada falla ANTES de devolver uña — el
+    // comando no existe, la interfaz va por delante del backend — el error es
+    // síncrono, se escapa del `onMount` y se lleva por delante la pantalla.
+    const hist = seguro(() => api.history(), [] as SavedTrack[]);
+    const feed = seguro(() => api.home(), VACIO);
 
     const h = await hist;
     setHistorial(h);
@@ -485,8 +504,7 @@ export function HomeFeed() {
     // recomendaciones personalizadas de Google, que exigen cuenta.
     const semilla = h[0];
     if (semilla) {
-      api
-        .radio(semilla.videoId)
+      seguro(() => api.radio(semilla.videoId), { playlistId: null, tracks: [] })
         .then((r) => {
           const items = r.tracks
             .filter((t) => t.videoId !== semilla.videoId)
@@ -499,8 +517,7 @@ export function HomeFeed() {
               duration: t.duration,
             }));
           if (items.length) setMix({ semilla, items });
-        })
-        .catch(() => {});
+        });
     }
 
     setEstantes((await feed).shelves);

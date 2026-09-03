@@ -1,4 +1,4 @@
-import { Show, createEffect, onMount } from "solid-js";
+import { ErrorBoundary, Show, createEffect, onMount } from "solid-js";
 import { TitleBar, Sidebar, HomeFeed, SearchView, LibraryView, Diagnostics } from "./components/Views";
 import { PlayerBar } from "./components/PlayerBar";
 import { SidePanel } from "./components/SidePanel";
@@ -45,8 +45,36 @@ export default function App() {
         {/* Barra lateral de navegación sin marco */}
         <Sidebar />
 
-        {/* Área principal fluida */}
+        {/*
+          Área principal fluida.
+
+          Va dentro de un `ErrorBoundary` a propósito: el primer objetivo del
+          proyecto es que no se rompa, y sin esto un fallo al pintar CUALQUIER
+          vista se lleva por delante el árbol entero — incluida la barra de
+          reproducción, que no tiene nada que ver. Pasó de verdad: un comando
+          que la interfaz llamaba antes de existir en el backend dejó la música
+          muda. Con el límite aquí, la música sigue sonando y el fallo se queda
+          en la mitad de la pantalla que lo causó.
+        */}
         <main class="flex-1 min-w-0 h-full overflow-hidden flex relative">
+          <ErrorBoundary
+            fallback={(err, reintentar) => (
+              <div class="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
+                <p class="text-sm font-semibold text-white/80">
+                  Esta pantalla ha fallado. La música sigue sonando.
+                </p>
+                <p class="max-w-lg break-words font-mono text-[11px] leading-relaxed text-white/40">
+                  {String(err)}
+                </p>
+                <button
+                  class="rounded-full border border-white/10 bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+                  onClick={reintentar}
+                >
+                  Reintentar
+                </button>
+              </div>
+            )}
+          >
           {/*
             1. Vista de reproducción.
 
@@ -122,6 +150,7 @@ export default function App() {
               </div>
             </div>
           </Show>
+          </ErrorBoundary>
         </main>
       </div>
 
