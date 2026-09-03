@@ -1,5 +1,14 @@
-import { For, Show, createEffect, createSignal, on, onMount } from "solid-js";
-import { api, thumbAt, type ClientHealth, type ExtractorStatus, type SavedTrack } from "../lib/api";
+import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
+import {
+  api,
+  thumbAt,
+  type BrowsePage,
+  type ClientHealth,
+  type ExtractorStatus,
+  type SavedTrack,
+  type Shelf as ShelfData,
+  type ShelfItem,
+} from "../lib/api";
 import {
   playback,
   results,
@@ -11,6 +20,7 @@ import {
   runSearch,
   resultsLabel,
   playFromResults,
+  playWithRadio,
   playSaved,
   playerViewOpen,
   setPlayerViewOpen,
@@ -355,157 +365,225 @@ export function Sidebar() {
 
 /* -------------------------------------------------------------- Home Feed */
 
-export function HomeFeed() {
-  const chips = [
-    "Activarte", "Para sentirse bien", "Relajación", "Viaje diario", "Entrenamiento", "Fiesta", "Concentración", "Triste", "Romance", "Sueño"
-  ];
-  const [activeChip, setActiveChip] = createSignal("Para sentirse bien");
-  const [historyTracks, setHistoryTracks] = createSignal<SavedTrack[]>([]);
+/**
+ * Una fila del inicio: título y tarjetas en horizontal.
+ *
+ * Es la forma que tiene YouTube Music de presentarlo todo — carruseles de
+ * tarjetas — y la que usa la referencia.
+ */
+function Shelf(p: {
+  title: string;
+  subtitle?: string;
+  items: ShelfItem[];
+  onPick: (item: ShelfItem, index: number) => void;
+}) {
+  let carril!: HTMLDivElement;
+  // Botones muertos, no. Si las tarjetas caben en pantalla no hay nada que
+  // desplazar, y una flecha que no hace nada es peor que no tenerla.
+  const [desbordado, setDesbordado] = createSignal(false);
 
-  onMount(async () => {
-    try {
-      const hist = await api.history();
-      setHistoryTracks(hist);
-    } catch {}
+  const revisar = () => setDesbordado(carril.scrollWidth > carril.clientWidth + 4);
+  onMount(() => {
+    revisar();
+    const obs = new ResizeObserver(revisar);
+    obs.observe(carril);
+    onCleanup(() => obs.disconnect());
   });
 
+  const desplazar = (dir: number) =>
+    carril.scrollBy({ left: dir * carril.clientWidth * 0.8, behavior: "smooth" });
+
   return (
-    <div class="scroll-area flex-1 h-full px-8 py-5 space-y-9 overflow-y-auto">
-      {/* Fila de píldoras de estado de ánimo estilo Image 3 */}
-      <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <For each={chips}>
-          {(c) => (
+    <section>
+      <div class="mb-3 flex items-end justify-between gap-3">
+        <div class="min-w-0">
+          <Show when={p.subtitle}>
+            <div class="text-[10.5px] font-bold uppercase tracking-widest text-white/40">
+              {p.subtitle}
+            </div>
+          </Show>
+          <h2 class="truncate text-2xl font-bold tracking-tight text-white">{p.title}</h2>
+        </div>
+        <Show when={desbordado()}>
+          <div class="flex shrink-0 items-center gap-1">
             <button
-              class="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all border"
-              classList={{
-                "bg-white/20 border-white/25 text-white shadow-sm": activeChip() === c,
-                "bg-white/[0.05] border-white/10 text-white/60 hover:text-white hover:bg-white/10": activeChip() !== c,
-              }}
-              onClick={() => setActiveChip(c)}
+              class="icon-btn size-8 rounded-full hover:bg-white/10"
+              onClick={() => desplazar(-1)}
+              title="Anterior"
             >
-              {c}
+              <I.ChevronLeft size={17} />
+            </button>
+            <button
+              class="icon-btn size-8 rounded-full hover:bg-white/10"
+              onClick={() => desplazar(1)}
+              title="Siguiente"
+            >
+              <I.ChevronRight size={17} />
+            </button>
+          </div>
+        </Show>
+      </div>
+
+      <div ref={carril} class="scrollbar-none flex gap-4 overflow-x-auto pb-1">
+        <For each={p.items}>
+          {(item, i) => (
+            <button
+              class="group flex w-[168px] shrink-0 flex-col text-left"
+              onClick={() => p.onPick(item, i())}
+              title={item.title}
+            >
+              <div class="relative aspect-square w-full overflow-hidden rounded-xl shadow-lg ring-1 ring-white/10 transition-all group-hover:shadow-2xl">
+                <Show when={item.thumbnail} fallback={<div class="size-full bg-white/8" />}>
+                  <img
+                    src={thumbAt(item.thumbnail, 320)!}
+                    alt=""
+                    class="size-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                </Show>
+                {/* Como en la referencia: el botón aparece abajo a la derecha,
+                    no tapando la portada entera. */}
+                <div class="absolute inset-0 bg-black/25 opacity-0 transition-opacity group-hover:opacity-100" />
+                <div class="absolute bottom-2 right-2 grid size-9 place-items-center rounded-full bg-black/70 text-white opacity-0 shadow-xl backdrop-blur-sm transition-opacity group-hover:opacity-100">
+                  <I.Play size={16} class="translate-x-[1px]" />
+                </div>
+              </div>
+              <div class="mt-2.5 line-clamp-2 text-[13px] font-bold leading-snug text-white">
+                {item.title}
+              </div>
+              <div class="mt-0.5 truncate text-[11.5px] font-medium text-white/50">
+                {item.subtitle}
+              </div>
             </button>
           )}
         </For>
       </div>
+    </section>
+  );
+}
 
-      {/* Sección 1: Volver a escuchar con avatar Jonatan Carrillo */}
-      <div>
-        <div class="flex items-center justify-between mb-4">
-          <div class="flex items-center gap-3">
-            <div class="size-8 rounded-full bg-purple-600 flex items-center justify-center font-bold text-white text-xs shadow-md">
-              J
-            </div>
-            <div>
-              <span class="text-[10px] uppercase font-bold tracking-widest text-white/45">JONATAN CARRILLO</span>
-              <h2 class="text-2xl font-bold text-white tracking-tight leading-tight">Volver a escuchar</h2>
-            </div>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <button class="icon-btn size-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white">
-              <I.ChevronLeft size={16} />
-            </button>
-            <button class="icon-btn size-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white">
-              <I.ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
+export function HomeFeed() {
+  const [historial, setHistorial] = createSignal<SavedTrack[]>([]);
+  const [estantes, setEstantes] = createSignal<ShelfData[]>([]);
+  const [mix, setMix] = createSignal<{ semilla: SavedTrack; items: ShelfItem[] } | null>(null);
+  const [cargando, setCargando] = createSignal(true);
 
-        <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-          <Show
-            when={historyTracks().length > 0}
-            fallback={
-              <div class="col-span-full py-8 text-center text-sm text-white/40">
-                Usa el buscador arriba para reproducir tus primeras canciones.
+  onMount(async () => {
+    // Las tres fuentes van en paralelo: el historial es instantáneo (SQLite),
+    // el feed y la radio tardan. Encadenarlas dejaría la pantalla en blanco
+    // hasta la más lenta.
+    const hist = api.history().catch(() => [] as SavedTrack[]);
+    const feed = api
+      .home()
+      .catch(
+        (): BrowsePage => ({ title: null, subtitle: null, thumbnail: null, shelves: [] }),
+      );
+
+    const h = await hist;
+    setHistorial(h);
+
+    // La radio de lo último escuchado es lo que sustituye a las
+    // recomendaciones personalizadas de Google, que exigen cuenta.
+    const semilla = h[0];
+    if (semilla) {
+      api
+        .radio(semilla.videoId)
+        .then((r) => {
+          const items = r.tracks
+            .filter((t) => t.videoId !== semilla.videoId)
+            .map((t) => ({
+              kind: "track" as const,
+              id: t.videoId,
+              title: t.title,
+              subtitle: t.subtitle,
+              thumbnail: t.thumbnail,
+              duration: t.duration,
+            }));
+          if (items.length) setMix({ semilla, items });
+        })
+        .catch(() => {});
+    }
+
+    setEstantes((await feed).shelves);
+    setCargando(false);
+  });
+
+  /** El historial, sin repetir, como tarjetas. */
+  const volverAEscuchar = (): ShelfItem[] => {
+    const vistos = new Set<string>();
+    return historial()
+      .filter((t) => vistos.has(t.videoId) ? false : vistos.add(t.videoId))
+      .slice(0, 12)
+      .map((t) => ({
+        kind: "track" as const,
+        id: t.videoId,
+        title: t.title,
+        subtitle: t.author,
+        thumbnail: t.thumbnail,
+        duration: null,
+      }));
+  };
+
+  const abrir = (item: ShelfItem) => {
+    if (item.kind === "track") {
+      playWithRadio({
+        videoId: item.id,
+        title: item.title,
+        subtitle: item.subtitle,
+        duration: item.duration,
+        thumbnail: item.thumbnail,
+      });
+      setPlayerViewOpen(true);
+    } else if (item.kind === "playlist") {
+      // Los ids de playlist de `browse` vienen con prefijo `VL`.
+      runSearch(item.id.replace(/^VL/, ""));
+    }
+    // Artistas y álbumes: pendientes de sus pantallas.
+  };
+
+  return (
+    <div class="scroll-area h-full flex-1 space-y-9 overflow-y-auto px-8 py-5">
+      <Show when={volverAEscuchar().length > 0}>
+        <Shelf
+          subtitle="De lo tuyo"
+          title="Volver a escuchar"
+          items={volverAEscuchar()}
+          onPick={abrir}
+        />
+      </Show>
+
+      <Show when={mix()}>
+        <Shelf
+          subtitle="Porque escuchaste"
+          title={`Mix de ${mix()!.semilla.title}`}
+          items={mix()!.items}
+          onPick={abrir}
+        />
+      </Show>
+
+      <For each={estantes()}>
+        {(e) => <Shelf title={e.title} items={e.items} onPick={abrir} />}
+      </For>
+
+      <Show when={!cargando() && estantes().length === 0 && volverAEscuchar().length === 0}>
+        <p class="mt-20 text-center text-sm text-white/40">
+          Busca algo arriba para empezar. Según vayas escuchando, esta pantalla se
+          llena con recomendaciones.
+        </p>
+      </Show>
+
+      <Show when={cargando()}>
+        <div class="flex gap-4">
+          <For each={Array(6).fill(0)}>
+            {() => (
+              <div class="w-[168px] shrink-0">
+                <div class="aspect-square w-full animate-pulse rounded-xl bg-white/8" />
+                <div class="mt-2.5 h-3 w-4/5 animate-pulse rounded bg-white/8" />
+                <div class="mt-1.5 h-2.5 w-2/5 animate-pulse rounded bg-white/6" />
               </div>
-            }
-          >
-            <For each={historyTracks().slice(0, 4)}>
-              {(track) => (
-                <div
-                  class="group flex flex-col cursor-pointer select-none"
-                  onClick={() => {
-                    api.playNow(track.videoId);
-                    setPlayerViewOpen(true);
-                  }}
-                >
-                  <div class="relative aspect-video w-full rounded-2xl overflow-hidden ring-1 ring-white/15 shadow-xl group-hover:shadow-2xl transition-all">
-                    <img
-                      src={thumbAt(track.thumbnail, 480)!}
-                      alt=""
-                      class="size-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <div class="size-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl">
-                        <I.Play size={22} class="translate-x-[1px]" />
-                      </div>
-                    </div>
-                  </div>
-                  <div class="mt-2.5 truncate text-[13.5px] font-bold text-white group-hover:text-[var(--accent)]">
-                    {track.title}
-                  </div>
-                  <div class="truncate text-xs text-white/55 font-medium mt-0.5">
-                    {track.author}
-                  </div>
-                </div>
-              )}
-            </For>
-          </Show>
+            )}
+          </For>
         </div>
-      </div>
-
-      {/* Sección 2: Videos musicales para ti */}
-      <div>
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-xl font-bold text-white tracking-tight">Videos musicales para ti</h2>
-          <div class="flex items-center gap-2">
-            <button class="rounded-full bg-white/10 hover:bg-white/15 px-3.5 py-1 text-xs font-semibold text-white border border-white/10">
-              Reproducir todo
-            </button>
-            <button class="icon-btn size-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white">
-              <I.ChevronLeft size={16} />
-            </button>
-            <button class="icon-btn size-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white">
-              <I.ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-          <Show when={historyTracks().length > 4}>
-            <For each={historyTracks().slice(4, 8)}>
-              {(track) => (
-                <div
-                  class="group flex flex-col cursor-pointer select-none"
-                  onClick={() => {
-                    api.playNow(track.videoId);
-                    setPlayerViewOpen(true);
-                  }}
-                >
-                  <div class="relative aspect-video w-full rounded-2xl overflow-hidden ring-1 ring-white/15 shadow-xl group-hover:shadow-2xl transition-all">
-                    <img
-                      src={thumbAt(track.thumbnail, 480)!}
-                      alt=""
-                      class="size-full object-cover group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <div class="size-12 rounded-full bg-white text-black flex items-center justify-center shadow-xl">
-                        <I.Play size={22} class="translate-x-[1px]" />
-                      </div>
-                    </div>
-                  </div>
-                  <div class="mt-2.5 truncate text-[13.5px] font-bold text-white group-hover:text-[var(--accent)]">
-                    {track.title}
-                  </div>
-                  <div class="truncate text-xs text-white/55 font-medium mt-0.5">
-                    {track.author}
-                  </div>
-                </div>
-              )}
-            </For>
-          </Show>
-        </div>
-      </div>
+      </Show>
     </div>
   );
 }

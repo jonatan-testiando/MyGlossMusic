@@ -76,6 +76,31 @@ export interface Palette {
   isLight: boolean;
 }
 
+/** Qué es un elemento de una estantería: decide adónde lleva al pulsarlo. */
+export type ItemKind = "track" | "album" | "artist" | "playlist";
+
+export interface ShelfItem {
+  kind: ItemKind;
+  /** `videoId` si es una pista, `browseId` o `playlistId` en los demás casos. */
+  id: string;
+  title: string;
+  subtitle: string;
+  thumbnail: string | null;
+  duration: string | null;
+}
+
+export interface Shelf {
+  title: string;
+  items: ShelfItem[];
+}
+
+export interface BrowsePage {
+  title: string | null;
+  subtitle: string | null;
+  thumbnail: string | null;
+  shelves: Shelf[];
+}
+
 export interface Radio {
   playlistId: string | null;
   tracks: SearchResult[];
@@ -107,6 +132,9 @@ const realApi = {
     invoke<string[]>("search_suggestions", { query }),
 
   radio: (videoId: string) => invoke<Radio>("radio", { videoId }),
+  home: () => invoke<BrowsePage>("home"),
+  browse: (browseId: string, params?: string) =>
+    invoke<BrowsePage>("browse", { browseId, params }),
   setUpNext: (tracks: Partial<Track>[]) => invoke<void>("set_up_next", { tracks }),
 
   playlist: (id: string) => invoke<PlaylistResult>("playlist", { id }),

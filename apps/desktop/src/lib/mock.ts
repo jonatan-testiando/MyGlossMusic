@@ -174,6 +174,26 @@ export const mockApi = {
     emit();
   },
   getState: async () => ({ ...state }),
+  home: async () => ({
+    title: null,
+    subtitle: null,
+    thumbnail: null,
+    shelves: [
+      {
+        title: "Listas de reproducción de la comunidad populares",
+        items: TRACKS.slice(0, 5).map((t) => ({
+          kind: "playlist" as const,
+          id: `VL${t.videoId}`,
+          title: `Mix ${t.title}`,
+          subtitle: "6,8 M de visualizaciones",
+          thumbnail: COVER,
+          duration: null,
+        })),
+      },
+    ],
+  }),
+  browse: async () => ({ title: null, subtitle: null, thumbnail: null, shelves: [] }),
+
   radio: async () => ({
     playlistId: "RDAMVMjig2aRZbHm4",
     tracks: TRACKS.slice(1).map((t) => ({
