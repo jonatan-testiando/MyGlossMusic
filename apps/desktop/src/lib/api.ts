@@ -47,6 +47,14 @@ export interface Lyrics {
   source: string;
 }
 
+export interface SavedTrack {
+  videoId: string;
+  title: string;
+  author: string;
+  thumbnail: string | null;
+  at: number;
+}
+
 export interface Palette {
   background: string;
   backgroundAlt: string;
@@ -82,6 +90,10 @@ const realApi = {
   getPalette: (url: string) => invoke<Palette>("get_palette", { url }),
   getLyrics: (title: string, artist: string, durationMs: number) =>
     invoke<Lyrics | null>("get_lyrics", { title, artist, durationMs }),
+  toggleFavorite: () => invoke<boolean>("toggle_favorite"),
+  isFavorite: (videoId: string) => invoke<boolean>("is_favorite", { videoId }),
+  favorites: () => invoke<SavedTrack[]>("favorites"),
+  history: () => invoke<SavedTrack[]>("history"),
   diagnose: () => invoke<ClientHealth[]>("diagnose"),
 
   minimize: () => invoke<void>("window_minimize"),

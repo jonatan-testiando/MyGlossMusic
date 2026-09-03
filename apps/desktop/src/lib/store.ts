@@ -30,7 +30,8 @@ export const [palette, setPalette] = createSignal<Palette>(DEFAULT_PALETTE);
 export const [results, setResults] = createSignal<SearchResult[]>([]);
 export const [searching, setSearching] = createSignal(false);
 export const [query, setQuery] = createSignal("");
-export const [view, setView] = createSignal<"home" | "search" | "diagnostics">("home");
+export const [view, setView] = createSignal<"home" | "search" | "library" | "diagnostics">("home");
+export const [isFavorite, setIsFavorite] = createSignal(false);
 
 /**
  * Posicion local interpolada.
@@ -61,6 +62,17 @@ export function initStore() {
   };
   requestAnimationFrame(tick);
 
+  // El estado de favorito se consulta al cambiar de pista, no en cada tick.
+  createEffect(
+    on(
+      () => playback.track?.videoId,
+      (id) => {
+        if (!id) return setIsFavorite(false);
+        api.isFavorite(id).then(setIsFavorite).catch(() => setIsFavorite(false));
+      },
+    ),
+  );
+
   // La paleta se recalcula solo cuando cambia la portada, no en cada estado.
   createEffect(
     on(
@@ -77,6 +89,19 @@ export function initStore() {
       },
     ),
   );
+}
+
+export async function toggleFavorite() {
+  try {
+    setIsFavorite(await api.toggleFavorite());
+  } catch (e) {
+    console.error("no se pudo marcar como favorito", e);
+  }
+}
+
+/** Reproduce una lista guardada (favoritos o historial) desde una posicion. */
+export function playSaved(list: { videoId: string; title: string; author: string; thumbnail: string | null }[], index: number) {
+  api.playQueue(list, index);
 }
 
 export async function runSearch(q: string) {

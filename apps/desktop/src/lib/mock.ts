@@ -8,7 +8,7 @@
  * En la aplicacion real nunca se carga: dentro de Tauri existe
  * `window.__TAURI_INTERNALS__` y `api.ts` usa el backend de verdad.
  */
-import type { ClientHealth, Lyrics, Palette, PlaybackState, SearchResult } from "./api";
+import type { ClientHealth, Lyrics, Palette, PlaybackState, SavedTrack, SearchResult } from "./api";
 
 const COVER = "https://i.ytimg.com/vi/jig2aRZbHm4/maxresdefault.jpg";
 
@@ -92,6 +92,15 @@ const lyrics: Lyrics = {
   })),
 };
 
+const saved: SavedTrack[] = TRACKS.slice(0, 4).map((t, i) => ({
+  videoId: t.videoId,
+  title: t.title,
+  author: t.author,
+  thumbnail: COVER,
+  at: Math.floor(Date.now() / 1000) - i * 3600,
+}));
+let favs: SavedTrack[] = saved.slice(0, 2);
+
 export const mockApi = {
   search: async (_q: string) => results,
   playQueue: async (_t: unknown[], start: number) => {
@@ -142,6 +151,13 @@ export const mockApi = {
   getState: async () => ({ ...state }),
   getPalette: async () => palette,
   getLyrics: async () => lyrics,
+  toggleFavorite: async () => {
+    favs = favs.length ? [] : saved;
+    return favs.length > 0;
+  },
+  isFavorite: async () => favs.length > 0,
+  favorites: async () => favs,
+  history: async () => saved,
   diagnose: async () => health,
   minimize: async () => {},
   toggleMaximize: async () => {},

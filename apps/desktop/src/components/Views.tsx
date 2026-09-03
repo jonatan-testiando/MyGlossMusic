@@ -1,5 +1,5 @@
-import { For, Show, createSignal, onMount } from "solid-js";
-import { api, thumbAt, type ClientHealth } from "../lib/api";
+import { For, Show, createEffect, createSignal, on, onMount } from "solid-js";
+import { api, thumbAt, type ClientHealth, type SavedTrack } from "../lib/api";
 import {
   playback,
   results,
@@ -11,6 +11,7 @@ import {
   runSearch,
   playFromResults,
   coverUrl,
+  playSaved,
 } from "../lib/store";
 import * as I from "./Icons";
 
@@ -81,6 +82,7 @@ export function Sidebar() {
   const items = [
     { id: "home" as const, label: "Inicio", icon: I.Home },
     { id: "search" as const, label: "Buscar", icon: I.Search },
+    { id: "library" as const, label: "Biblioteca", icon: I.Library },
     { id: "diagnostics" as const, label: "Diagnóstico", icon: I.Stethoscope },
   ];
 
@@ -227,6 +229,78 @@ function SkeletonList() {
           </div>
         )}
       </For>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- Library */
+
+/** Favoritos e historial, ambos guardados en SQLite local. */
+export function LibraryView() {
+  const [tab, setTab] = createSignal<"favorites" | "history">("favorites");
+  const [rows, setRows] = createSignal<SavedTrack[]>([]);
+
+  const load = async () => {
+    try {
+      setRows(tab() === "favorites" ? await api.favorites() : await api.history());
+    } catch {
+      setRows([]);
+    }
+  };
+
+  createEffect(on(tab, load));
+
+  return (
+    <div class="flex h-full flex-col">
+      <div class="flex shrink-0 gap-1 px-5 pt-4">
+        <For each={[["favorites", "Favoritos"], ["history", "Historial"]] as const}>
+          {([id, label]) => (
+            <button
+              class="rounded-lg px-3.5 py-1.5 text-[12px] font-medium transition-colors"
+              classList={{
+                "bg-[var(--panel-strong)]": tab() === id,
+                "opacity-50 hover:opacity-80": tab() !== id,
+              }}
+              onClick={() => setTab(id)}
+            >
+              {label}
+            </button>
+          )}
+        </For>
+      </div>
+
+      <div class="scroll-area flex-1 px-4 py-3">
+        <Show
+          when={rows().length > 0}
+          fallback={
+            <p class="mt-14 text-center text-[13px] opacity-40">
+              {tab() === "favorites"
+                ? "Aún no has guardado nada. Usa el corazón del reproductor."
+                : "Todavía no has escuchado nada."}
+            </p>
+          }
+        >
+          <div class="fade-in flex flex-col gap-0.5">
+            <For each={rows()}>
+              {(t, i) => (
+                <button
+                  class="group flex items-center gap-3 rounded-xl px-3 py-2 text-left transition-colors hover:bg-[var(--panel)]"
+                  classList={{ "bg-[var(--panel)]": playback.track?.videoId === t.videoId }}
+                  onClick={() => playSaved(rows(), i())}
+                >
+                  <Show when={t.thumbnail} fallback={<div class="size-11 rounded-lg bg-white/8" />}>
+                    <img src={thumbAt(t.thumbnail, 96)!} alt="" class="size-11 rounded-lg object-cover" />
+                  </Show>
+                  <div class="min-w-0 flex-1">
+                    <div class="truncate text-[13px]">{t.title}</div>
+                    <div class="truncate text-[11.5px] opacity-50">{t.author}</div>
+                  </div>
+                </button>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
     </div>
   );
 }

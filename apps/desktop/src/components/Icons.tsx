@@ -111,3 +111,18 @@ export const Music = svg(
   </>,
   false,
 );
+
+export const Heart = svg(
+  <path d="M12 20.3 4.6 13a4.7 4.7 0 0 1 6.6-6.7l.8.8.8-.8A4.7 4.7 0 0 1 19.4 13Z" />,
+  false,
+);
+export const HeartFilled = svg(
+  <path d="M12 20.3 4.6 13a4.7 4.7 0 0 1 6.6-6.7l.8.8.8-.8A4.7 4.7 0 0 1 19.4 13Z" />,
+);
+export const Library = svg(
+  <>
+    <path d="M4 4v16M9 4v16" />
+    <path d="m14 5 5 15" />
+  </>,
+  false,
+);

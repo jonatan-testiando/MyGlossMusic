@@ -30,4 +30,8 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 reqwest.workspace = true
+rusqlite = { version = "0.40", features = ["bundled"] }
+dirs = "6"
+souvlaki = "0.8"
+discord-rich-presence = "1"
 

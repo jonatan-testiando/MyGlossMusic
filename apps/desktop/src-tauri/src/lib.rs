@@ -3,7 +3,10 @@
 //! La interfaz nunca habla con YouTube: solo invoca estos comandos y escucha el
 //! evento `playback`. Toda la logica fragil queda del lado de Rust.
 
+mod db;
+mod discord;
 mod lyrics;
+mod media;
 mod palette;
 
 use std::sync::Arc;
@@ -23,6 +26,7 @@ struct App {
     /// muchas veces (cola, historial, volver a la misma cancion).
     palettes: Arc<tokio::sync::Mutex<std::collections::HashMap<String, palette::Palette>>>,
     lyrics: Arc<tokio::sync::Mutex<std::collections::HashMap<String, Option<lyrics::Lyrics>>>>,
+    db: Arc<db::Db>,
 }
 
 // --------------------------------------------------------------------------
@@ -171,6 +175,41 @@ async fn get_lyrics(
 }
 
 // --------------------------------------------------------------------------
+// Biblioteca local
+// --------------------------------------------------------------------------
+
+#[tauri::command]
+fn toggle_favorite(state: tauri::State<'_, App>) -> Result<bool, String> {
+    let s = state.engine.state();
+    let track = s.track.ok_or("nada sonando")?;
+    state
+        .db
+        .toggle_favorite(&db::SavedTrack {
+            video_id: track.video_id,
+            title: track.title,
+            author: track.author,
+            thumbnail: track.thumbnail,
+            at: 0,
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn is_favorite(state: tauri::State<'_, App>, video_id: String) -> bool {
+    state.db.is_favorite(&video_id)
+}
+
+#[tauri::command]
+fn favorites(state: tauri::State<'_, App>) -> Result<Vec<db::SavedTrack>, String> {
+    state.db.favorites().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn history(state: tauri::State<'_, App>) -> Result<Vec<db::SavedTrack>, String> {
+    state.db.history(100).map_err(|e| e.to_string())
+}
+
+// --------------------------------------------------------------------------
 // Diagnostico (Fase 6)
 // --------------------------------------------------------------------------
 
@@ -280,16 +319,70 @@ pub fn run() {
 
             let engine = Engine::start()?;
             let innertube = InnerTube::new()?;
+            let database = Arc::new(db::Db::open()?);
+
+            // Ajustes de la sesion anterior.
+            if let Some(v) = database.get_setting("volume").and_then(|v| v.parse().ok()) {
+                engine.send(Command::SetVolume(v));
+            }
+            if let Some(r) = database.get_setting("repeat") {
+                let mode = match r.as_str() {
+                    "all" => Repeat::All,
+                    "one" => Repeat::One,
+                    _ => Repeat::Off,
+                };
+                engine.send(Command::SetRepeat(mode));
+            }
+            if database.get_setting("shuffle").as_deref() == Some("true") {
+                engine.send(Command::SetShuffle(true));
+            }
+
+            media::init(app.handle(), engine.clone());
+            discord::spawn(engine.subscribe());
 
             // Reenvia cada cambio de estado del motor a la interfaz. Es un canal
             // `watch`, asi que no hay sondeo: la interfaz solo se despierta
             // cuando algo cambia de verdad.
             let mut rx = engine.subscribe();
             let handle = app.handle().clone();
+            let db_for_task = Arc::clone(&database);
             tauri::async_runtime::spawn(async move {
+                let mut last_track: Option<String> = None;
+                let mut last_prefs = (f32::NAN, String::new(), false);
+
                 while rx.changed().await.is_ok() {
                     let state = rx.borrow().clone();
-                    let _ = handle.emit("playback", state);
+                    let _ = handle.emit("playback", state.clone());
+
+                    // La tarjeta del sistema solo se toca desde el hilo
+                    // principal: `MediaControls` no es `Send` en Windows.
+                    let for_media = state.clone();
+                    let _ = handle.run_on_main_thread(move || media::update(&for_media));
+
+                    // Historial: al cambiar de pista, no en cada tick.
+                    if let Some(t) = &state.track {
+                        if last_track.as_deref() != Some(t.video_id.as_str()) {
+                            last_track = Some(t.video_id.clone());
+                            let _ = db_for_task.push_history(&db::SavedTrack {
+                                video_id: t.video_id.clone(),
+                                title: t.title.clone(),
+                                author: t.author.clone(),
+                                thumbnail: t.thumbnail.clone(),
+                                at: 0,
+                            });
+                        }
+                    }
+
+                    // Ajustes: solo cuando cambian de verdad, para no escribir
+                    // en disco diez veces por segundo.
+                    let repeat = format!("{:?}", state.repeat).to_lowercase();
+                    let prefs = (state.volume, repeat.clone(), state.shuffle);
+                    if prefs != last_prefs {
+                        last_prefs = prefs;
+                        let _ = db_for_task.set_setting("volume", &state.volume.to_string());
+                        let _ = db_for_task.set_setting("repeat", &repeat);
+                        let _ = db_for_task.set_setting("shuffle", &state.shuffle.to_string());
+                    }
                 }
             });
 
@@ -299,6 +392,7 @@ pub fn run() {
                 http: reqwest::Client::new(),
                 palettes: Arc::new(tokio::sync::Mutex::new(Default::default())),
                 lyrics: Arc::new(tokio::sync::Mutex::new(Default::default())),
+                db: database,
             });
             Ok(())
         })
@@ -317,6 +411,10 @@ pub fn run() {
             get_state,
             get_palette,
             get_lyrics,
+            toggle_favorite,
+            is_favorite,
+            favorites,
+            history,
             diagnose,
             window_minimize,
             window_toggle_maximize,

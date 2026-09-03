@@ -1,6 +1,6 @@
 import { Show, createSignal } from "solid-js";
 import { api, fmtTime, thumbAt } from "../lib/api";
-import { playback, position } from "../lib/store";
+import { playback, position, isFavorite, toggleFavorite } from "../lib/store";
 import * as I from "./Icons";
 
 /** Barra de reproduccion flotante. */
@@ -80,6 +80,18 @@ export function PlayerBar() {
               </div>
               <div class="truncate text-[11px] opacity-55">{playback.track?.author ?? ""}</div>
             </div>
+            <Show when={playback.track}>
+              <button
+                class="icon-btn size-8 shrink-0"
+                classList={{ active: isFavorite() }}
+                onClick={() => toggleFavorite()}
+                title={isFavorite() ? "Quitar de favoritos" : "Añadir a favoritos"}
+              >
+                <Show when={isFavorite()} fallback={<I.Heart size={16} />}>
+                  <I.HeartFilled size={16} />
+                </Show>
+              </button>
+            </Show>
           </div>
 
           {/* Transporte */}

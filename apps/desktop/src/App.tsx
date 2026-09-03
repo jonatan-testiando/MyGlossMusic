@@ -1,5 +1,5 @@
 import { Show, createEffect, onMount } from "solid-js";
-import { TitleBar, Sidebar, NowPlaying, SearchView, Diagnostics } from "./components/Views";
+import { TitleBar, Sidebar, NowPlaying, SearchView, LibraryView, Diagnostics } from "./components/Views";
 import { PlayerBar } from "./components/PlayerBar";
 import { SidePanel } from "./components/SidePanel";
 import { initStore, palette, playback, view } from "./lib/store";
@@ -41,6 +41,9 @@ export default function App() {
           </Show>
           <Show when={view() === "search"}>
             <SearchView />
+          </Show>
+          <Show when={view() === "library"}>
+            <LibraryView />
           </Show>
           <Show when={view() === "diagnostics"}>
             <Diagnostics />

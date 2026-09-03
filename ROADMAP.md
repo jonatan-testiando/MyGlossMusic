@@ -87,62 +87,74 @@ deje de sonar, es lo primero que se ejecuta.
 
 ---
 
-## Fase 1 — Motor de audio
+## Fase 1 — Motor de audio ✅ COMPLETADA
 
-Lo más difícil que queda. Diseño ya condicionado por los hallazgos de Fase 0.
+- [x] Descarga por trozos de 1 MiB con cabecera `Range:`
+- [x] Caché progresivo en disco (se descartó el buffer circular: con 25 MB/s
+      medidos, una pista entera cabe en ~0.15 s y el archivo da seek trivial,
+      arranque instantáneo y reproducción offline gratis)
+- [x] `seek` — medido exacto a 1:30
+- [x] Cola con repetición off/all/one y aleatorio · 6 tests
+- [x] Precarga de la siguiente pista
+- [ ] Normalización de volumen con `loudness_db` (ya se extrae, falta aplicarlo)
+- [ ] Renovación de URL caducada (~6 h) de forma transparente
 
-- [ ] `ytm-audio`: descarga por trozos de 1 MiB con cabecera `Range:`
-- [ ] Buffer circular con relleno anticipado (2–3 trozos de margen)
-- [ ] `seek` → recolocar offset y purgar buffer
-- [ ] Cola de reproducción, siguiente/anterior, repetición, aleatorio
-- [ ] Precarga de la siguiente pista para transición sin corte
-- [ ] Normalización de volumen usando `loudness_db`, que ya extraemos
-- [ ] Renovación de URL caducada (expiran a las ~6 h) de forma transparente
+**Medido:** 325 ms hasta el primer sonido. Pausa congela la posición, la
+reanudación avanza.
 
-## Fase 2 — Shell Tauri + SolidJS
+## Fase 2 — Shell Tauri + SolidJS ✅ COMPLETADA
 
-- [ ] Tauri v2 sin marco de ventana, comandos hacia el motor
-- [ ] SolidJS + Tailwind, estado por señales
-- [ ] Layout base: barra lateral, panel central, reproductor flotante
-- [ ] Búsqueda contra InnerTube
+- [x] Tauri v2 sin marco de ventana, comandos hacia el motor
+- [x] SolidJS + Tailwind v4 — 45 KB de JS
+- [x] Barra lateral, panel central, panel derecho, reproductor flotante
+- [x] Búsqueda contra InnerTube, parseada por recorrido recursivo del JSON
+- [x] Modo mock fuera de Tauri para desarrollar la interfaz en el navegador
 
-## Fase 3 — Estética
+## Fase 3 — Estética ✅ COMPLETADA
 
-El objetivo visual es el fondo reactivo al color de la portada.
+- [x] Paleta en Oklab con k-means determinista, sobre la portada a 48×48 · 4 tests
+- [x] Fondo: portada a 48 px estirada a pantalla completa, sin `backdrop-filter`
+- [x] Paneles `rgba(255,255,255,0.055)` + borde sutil, sin blur
+- [x] Transiciones por `opacity` y variables CSS
+- [ ] Opcional: Mica/Acrylic con `window-vibrancy` para los bordes. Ojo: eso
+      desenfoca **el escritorio**, no la portada; es otro efecto.
 
-- [ ] Extracción de paleta en Rust, **en Oklab, no en RGB** (en RGB salen colores
-      sucios y sin contraste). Sobre la portada a 64×64.
-- [ ] Fondo: portada a 32×32 escalada a pantalla completa. El reescalado bilineal
-      del navegador *es* el desenfoque, y cuesta cero. **Nada de `backdrop-filter`.**
-- [ ] Paneles: `rgba(255,255,255,0.06)` + borde sutil. Sin blur.
-- [ ] Transición entre canciones: crossfade de dos capas por `opacity`
-- [ ] Opcional: Mica/Acrylic nativo con `window-vibrancy` para los bordes.
-      Ojo: eso desenfoca **el escritorio**, no la portada; es otro efecto.
+## Fase 4 — Biblioteca ⏳ PARCIAL
 
-## Fase 4 — Biblioteca
-
+- [x] SQLite (`rusqlite`): favoritos, historial, ajustes persistentes · 3 tests
+- [x] **Modo anónimo**: es el único modo que hay ahora mismo
 - [ ] Login por cookies, cliente `WEB_REMIX` (plano separado, ver regla de oro)
-- [ ] **Modo anónimo por defecto**; sesión opcional y explícita
-- [ ] Playlists, Liked Music, historial
-- [ ] Caché SQLite (`rusqlite`): metadatos, carátulas, resultados
+- [ ] Playlists y Liked Music de la cuenta
 
-## Fase 5 — Integración
+> El inicio de sesión requiere las cookies de Google del usuario. Queda
+> pendiente a propósito: es la parte con más riesgo para la cuenta y debe ser
+> una decisión explícita suya, no algo que aparezca sin más.
 
-- [ ] Letras: LRCLIB con cascada de proveedores
-- [ ] Resaltado por palabra interpolando la duración de cada línea
-      (LRCLIB da sincronía por línea; el efecto palabra a palabra se simula)
-- [ ] `souvlaki`: teclas multimedia y SMTC de Windows
-- [ ] Discord Rich Presence
+## Fase 5 — Integración ✅ COMPLETADA
 
-## Fase 6 — Antifragilidad
+- [x] Letras vía LRCLIB, con búsqueda exacta y respaldo difuso · 4 tests
+- [x] Barrido de texto interpolando la duración de línea con `background-clip`
+- [x] `souvlaki`: teclas multimedia y SMTC de Windows — verificado activo
+- [x] Discord Rich Presence — compila y degrada bien, **sin verificar en vivo**
+      (haría falta Discord abierto y un app id propio; ver `discord.rs`)
+
+## Fase 6 — Antifragilidad ⏳ PARCIAL
 
 Lo que de verdad diferencia el proyecto.
 
-- [ ] Cascada de clientes con degradación (ya en `resolve()`)
-- [ ] Panel de diagnóstico en la app, equivalente a `probe`
-- [ ] Reintento con cliente alternativo al fallar una pista
-- [ ] Caché de streams para que un corte de red no pare la música
+- [x] Cascada de clientes con degradación, en `resolve()`
+- [x] Panel de diagnóstico en la app, equivalente a `probe`
+- [x] Reintento con cliente alternativo (implícito en la cascada)
+- [x] Caché de pistas en disco: lo ya escuchado sobrevive a un corte de red
 - [ ] Test de integración en CI que detecte roturas de YouTube antes que el usuario
+
+## Pendiente, por orden de valor
+
+1. **CI que detecte roturas de YouTube** antes que el usuario.
+2. **Normalización de volumen** con `loudness_db`, que ya se extrae.
+3. **Renovación de URL caducada** (~6 h) sin cortar la reproducción.
+4. **Inicio de sesión**, si lo quieres, con la separación de planos intacta.
+5. Verificar Discord RPC con Discord abierto y un app id propio.
 
 ## Fuera de alcance en la v1
 
