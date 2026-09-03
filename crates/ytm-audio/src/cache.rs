@@ -29,6 +29,13 @@ use std::time::{Duration, Instant};
 /// inmediato sin saturar la red con peticiones diminutas.
 const CHUNK: u64 = 1_048_576;
 
+/// Umbral a partir del cual un 403 se interpreta como el limite de poToken.
+///
+/// Medido con `ytm-spike limits` sobre 6 videos: 5 de 6 cortan exactamente en
+/// 1 MiB. El unico que se descarga entero es `dQw4w9WgXcQ`, que resulto ser
+/// anormalmente permisivo y con el que se valido (mal) la Fase 0.
+const POTOKEN_WALL: u64 = 1_048_576;
+
 /// Estado compartido de la descarga de una pista.
 #[derive(Debug)]
 struct Shared {
@@ -191,7 +198,31 @@ async fn download(
         if res.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
             break;
         }
-        let res = res.error_for_status().context("el servidor rechazo el rango")?;
+        let status = res.status();
+        if !status.is_success() {
+            // Un 403 justo despues del primer MiB es la firma del limite de
+            // poToken: googlevideo sirve ~1 MiB (~65 s en itag 140) de la
+            // mayoria del contenido y rechaza el resto si la peticion no lleva
+            // un token de atestacion. No es un fallo de red ni una URL caducada,
+            // y no se arregla reintentando ni volviendo a resolver: esta medido
+            // en `ytm-spike limits`.
+            if status == reqwest::StatusCode::FORBIDDEN && offset >= POTOKEN_WALL {
+                anyhow::bail!(
+                    "YouTube corta la descarga en {} KB sin poToken \
+                     (403 en offset {}). Solo hay ~{} s de audio.",
+                    offset / 1024,
+                    offset,
+                    offset / 16_000
+                );
+            }
+            let body = res.text().await.unwrap_or_default();
+            anyhow::bail!(
+                "el servidor rechazo el rango: HTTP {} en offset {} ({})",
+                status.as_u16(),
+                offset,
+                body.chars().take(200).collect::<String>()
+            );
+        }
 
         // La primera respuesta parcial trae el tamano real en Content-Range.
         if offset == 0 {

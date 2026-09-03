@@ -58,6 +58,27 @@ async fn main() -> Result<()> {
             let id = video_id_arg(&args)?;
             engine::run(&id).await
         }
+        "limits" => {
+            let ids: Vec<String> = args[1..].iter().map(|a| parse_video_id(a)).collect();
+            anyhow::ensure!(!ids.is_empty(), "faltan videoIds");
+            bench::limits(&ids).await
+        }
+        "follow" => {
+            let id = video_id_arg(&args)?;
+            bench::follow(&id).await
+        }
+        "recover" => {
+            let id = video_id_arg(&args)?;
+            bench::recover(&id).await
+        }
+        "params" => {
+            let id = video_id_arg(&args)?;
+            bench::params(&id).await
+        }
+        "fullget" => {
+            let id = video_id_arg(&args)?;
+            bench::full_get(&id).await
+        }
         "bench" => {
             let id = video_id_arg(&args)?;
             bench::run(&id).await

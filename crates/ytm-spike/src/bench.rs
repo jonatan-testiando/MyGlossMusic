@@ -11,6 +11,272 @@ use ytm_source::InnerTube;
 
 const CHUNK: u64 = 1_048_576; // 1 MiB
 
+/// Prueba SOLO un GET completo sobre una URL recien resuelta y sin tocar.
+///
+/// Importa que sea lo primero que se hace: si antes se gasta una peticion, el
+/// contenido con licencia ya devuelve 403 y la medida no vale.
+/// Prueba combinaciones de parametros de query en peticiones SECUENCIALES.
+///
+/// El reproductor web real no pide un rango a secas: manda `range`, un numero
+/// de peticion `rn` que incrementa, y `rbuf`. La hipotesis es que googlevideo
+/// rechaza como repeticion cualquier peticion que no incremente `rn`.
+/// Inspecciona el cuerpo que devuelve `alr=yes` y prueba re-resolver por trozo.
+/// Sigue la URL de respaldo que devuelve `alr=yes` y continua la descarga.
+///
+/// Es el mecanismo propio de googlevideo: cuando quiere redirigir, en vez de
+/// datos devuelve una URL nueva en texto plano. Seguirla es lo que hace el
+/// reproductor real.
+/// Mide cuantos trozos de 1 MiB se pueden descargar antes del primer 403.
+///
+/// Sirve para distinguir contenido que se descarga entero de contenido que
+/// corta a los ~65 s (1 MiB en itag 140).
+pub async fn limits(ids: &[String]) -> Result<()> {
+    let it = InnerTube::new()?;
+    let client = reqwest::Client::new();
+
+    println!("
+  {:<14} {:>7} {:>8} {:>9}  {}", "VIDEO", "TROZOS", "KB", "ESPERADO", "TITULO");
+    println!("  {}", "-".repeat(78));
+
+    for id in ids {
+        let Ok(resolved) = ytm_source::resolve(&it, id).await else {
+            println!("  {id:<14} {:>7} {:>8} {:>9}  no se pudo resolver", "-", "-", "-");
+            continue;
+        };
+        let expected = resolved.audio.size_bytes.unwrap_or(0);
+
+        let mut got = 0u64;
+        let mut chunks = 0;
+        loop {
+            let res = client
+                .get(&resolved.audio.url)
+                .header("Range", format!("bytes={got}-{}", got + CHUNK - 1))
+                .send()
+                .await;
+            match res {
+                Ok(r) if r.status().is_success() => {
+                    let n = r.bytes().await.map(|b| b.len() as u64).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    got += n;
+                    chunks += 1;
+                    if n < CHUNK || (expected > 0 && got >= expected) {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        let verdict = if expected > 0 && got >= expected { "COMPLETO" } else { "CORTADO" };
+        println!(
+            "  {id:<14} {chunks:>7} {:>8} {:>9}  {} · {}",
+            got / 1024,
+            expected / 1024,
+            verdict,
+            resolved.track.title.as_deref().unwrap_or("?").chars().take(34).collect::<String>()
+        );
+    }
+    println!();
+    Ok(())
+}
+
+pub async fn follow(video_id: &str) -> Result<()> {
+    let it = InnerTube::new()?;
+    let client = reqwest::Client::new();
+    let resolved = ytm_source::resolve(&it, video_id).await?;
+    let expected = resolved.audio.size_bytes.unwrap_or(0);
+
+    println!("
+  Siguiendo la redireccion de alr=yes");
+    println!("  esperado: {} KB
+", expected / 1024);
+
+    let mut base = resolved.audio.url.clone();
+    let mut offset = 0u64;
+    let mut redirects = 0;
+    // `rn` es el numero de peticion y debe incrementar en CADA peticion. Si se
+    // repite, googlevideo la trata como un reintento y devuelve 403 en vez de
+    // la redireccion.
+    let mut rn = 0u64;
+    let t = Instant::now();
+
+    while expected == 0 || offset < expected {
+        let end = offset + CHUNK - 1;
+        let res = client
+            .get(format!("{base}&range={offset}-{end}&rn={rn}&rbuf=0&alr=yes"))
+            .send()
+            .await?;
+        rn += 1;
+        let status = res.status();
+        let bytes = res.bytes().await?;
+
+        // Un cuerpo pequeno que empieza por http:// es una redireccion, no audio.
+        let looks_like_url = bytes.len() < 8192 && bytes.starts_with(b"http");
+        if looks_like_url {
+            base = String::from_utf8_lossy(&bytes).trim().to_string();
+            redirects += 1;
+            println!("  redireccion #{redirects} en offset {offset}");
+            if redirects > 12 {
+                println!("  demasiadas redirecciones, abandono
+");
+                return Ok(());
+            }
+            continue;
+        }
+
+        if !status.is_success() {
+            println!("  HTTP {} en offset {offset}
+", status.as_u16());
+            return Ok(());
+        }
+        if bytes.is_empty() {
+            break;
+        }
+        offset += bytes.len() as u64;
+        println!("  +{} KB  (total {} KB)", bytes.len() / 1024, offset / 1024);
+        if (bytes.len() as u64) < CHUNK {
+            break;
+        }
+    }
+
+    let secs = t.elapsed().as_secs_f64();
+    println!(
+        "
+  RESULTADO: {} KB en {:.1}s ({:.2} MB/s), {redirects} redirecciones",
+        offset / 1024,
+        secs,
+        offset as f64 / 1_048_576.0 / secs
+    );
+    println!(
+        "  completo: {}
+",
+        if expected > 0 && offset >= expected { "SI" } else { "NO" }
+    );
+    Ok(())
+}
+
+pub async fn recover(video_id: &str) -> Result<()> {
+    let it = InnerTube::new()?;
+    let client = reqwest::Client::new();
+
+    // 1) Que hay dentro del cuerpo de 1 KB de alr=yes.
+    let resolved = ytm_source::resolve(&it, video_id).await?;
+    let _ = client
+        .get(format!("{}&range=0-{}&rn=0&rbuf=0&alr=yes", resolved.audio.url, CHUNK - 1))
+        .send()
+        .await?
+        .bytes()
+        .await?;
+    let second = client
+        .get(format!(
+            "{}&range={}-{}&rn=1&rbuf=0&alr=yes",
+            resolved.audio.url,
+            CHUNK,
+            CHUNK * 2 - 1
+        ))
+        .send()
+        .await?;
+    let body = second.text().await.unwrap_or_default();
+    println!("
+  Cuerpo de alr=yes en el segundo trozo ({} bytes):", body.len());
+    println!("  {}
+", body.chars().take(220).collect::<String>());
+
+    // 2) Re-resolver la URL para cada trozo.
+    println!("  Re-resolviendo la URL en cada trozo:
+");
+    let mut codes = Vec::new();
+    let mut total = 0usize;
+    for i in 0..4u64 {
+        let fresh = ytm_source::resolve(&it, video_id).await?;
+        let start = i * CHUNK;
+        let res = client
+            .get(&fresh.audio.url)
+            .header("Range", format!("bytes={start}-{}", start + CHUNK - 1))
+            .send()
+            .await?;
+        let st = res.status().as_u16();
+        let n = res.bytes().await.map(|b| b.len()).unwrap_or(0);
+        total += n;
+        codes.push(format!("{st}/{}KB", n / 1024));
+    }
+    println!("  {}", codes.join("  "));
+    println!("  total: {} KB
+", total / 1024);
+    Ok(())
+}
+
+pub async fn params(video_id: &str) -> Result<()> {
+    let it = InnerTube::new()?;
+
+    let variants: [(&str, fn(&str, u64, u64, u64) -> String); 4] = [
+        ("solo range", |u, s, e, _| format!("{u}&range={s}-{e}")),
+        ("range+rn", |u, s, e, i| format!("{u}&range={s}-{e}&rn={i}")),
+        ("range+rn+rbuf", |u, s, e, i| format!("{u}&range={s}-{e}&rn={i}&rbuf=0")),
+        ("range+rn+rbuf+alr", |u, s, e, i| {
+            format!("{u}&range={s}-{e}&rn={i}&rbuf=0&alr=yes")
+        }),
+    ];
+
+    println!("
+  Parametros de query, 4 trozos seguidos (URL nueva por variante)
+");
+    for (label, build) in variants {
+        // URL recien resuelta para cada variante: una URL ya quemada daria 403
+        // por el motivo equivocado.
+        let resolved = ytm_source::resolve(&it, video_id).await?;
+        let client = reqwest::Client::new();
+        let mut codes = Vec::new();
+
+        for i in 0..4u64 {
+            let start = i * CHUNK;
+            let target = build(&resolved.audio.url, start, start + CHUNK - 1, i);
+            match client.get(&target).send().await {
+                Ok(r) => {
+                    let st = r.status().as_u16();
+                    let n = r.bytes().await.map(|b| b.len()).unwrap_or(0);
+                    codes.push(format!("{st}/{}KB", n / 1024));
+                }
+                Err(_) => codes.push("ERR".into()),
+            }
+        }
+        println!("  {label:<22} {}", codes.join("  "));
+    }
+    println!();
+    Ok(())
+}
+
+pub async fn full_get(video_id: &str) -> Result<()> {
+    let it = InnerTube::new()?;
+    let resolved = ytm_source::resolve(&it, video_id).await?;
+    let expected = resolved.audio.size_bytes.unwrap_or(0);
+
+    println!("
+  GET completo - {}", resolved.track.title.as_deref().unwrap_or("?"));
+    println!("  esperado: {} KB
+", expected / 1024);
+
+    let t = Instant::now();
+    let res = reqwest::Client::new().get(&resolved.audio.url).send().await?;
+    let status = res.status();
+    let body = res.bytes().await?;
+    let secs = t.elapsed().as_secs_f64();
+    let mb = body.len() as f64 / 1_048_576.0;
+
+    println!("  HTTP {}", status.as_u16());
+    println!("  recibido  {} KB en {:.1}s ({:.2} MB/s)", body.len() / 1024, secs, mb / secs);
+    println!(
+        "  completo  {}",
+        if expected > 0 && body.len() as u64 == expected { "SI" } else { "NO" }
+    );
+    let realtime = resolved.audio.bitrate.unwrap_or(130_000) as f64 / 8.0 / 1_048_576.0;
+    println!("  veredicto {}
+", if mb / secs > realtime * 3.0 { "USABLE" } else { "DEMASIADO LENTO" });
+    Ok(())
+}
+
 pub async fn run(video_id: &str) -> Result<()> {
     let it = InnerTube::new()?;
     let resolved = ytm_source::resolve(&it, video_id).await?;
@@ -95,6 +361,39 @@ pub async fn run(video_id: &str) -> Result<()> {
             let body = res.bytes().await?;
             report("control header, conexion nueva", body.len(), t.elapsed(), status);
         }
+    }
+
+    // 5) La prueba que importa: VARIOS trozos seguidos, variando el
+    //    User-Agent. Hipotesis: googlevideo valida que las peticiones de
+    //    descarga vengan del mismo cliente que resolvio la URL.
+    let ua = ytm_source::clients::by_id(resolved.audio.via_client)
+        .map(|c| c.user_agent)
+        .unwrap_or("");
+
+    println!("
+  Descarga secuencial de 4 trozos (1 MiB cada uno):
+");
+    for (label, with_ua) in [("sin User-Agent", false), ("con UA del cliente", true)] {
+        let client = reqwest::Client::new();
+        let mut codes = Vec::new();
+        for i in 0..4u64 {
+            let start = i * CHUNK;
+            let mut req = client
+                .get(url)
+                .header("Range", format!("bytes={start}-{}", start + CHUNK - 1));
+            if with_ua {
+                req = req.header("User-Agent", ua);
+            }
+            match req.send().await {
+                Ok(r) => {
+                    let st = r.status().as_u16();
+                    let n = r.bytes().await.map(|b| b.len()).unwrap_or(0);
+                    codes.push(format!("{st}/{}KB", n / 1024));
+                }
+                Err(_) => codes.push("ERR".into()),
+            }
+        }
+        println!("  {label:<22} {}", codes.join("  "));
     }
 
     println!();

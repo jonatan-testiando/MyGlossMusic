@@ -15,6 +15,25 @@ Aquí no hay webview de YouTube. Se habla directamente con la API interna
 (InnerTube), se decodifica el audio en Rust y la interfaz es propia. Cuando
 YouTube cambia algo, solo hay que tocar un crate.
 
+## Limitación conocida y grave
+
+**La reproducción se corta a los ~65 segundos en la mayoría de canciones.**
+
+Medido con `ytm-spike limits` sobre 6 vídeos: googlevideo sirve exactamente
+1 MiB (~65 s en itag 140) y devuelve 403 para el resto si la petición no lleva
+un **poToken** (token de atestación de BotGuard). No se arregla reintentando,
+ni re-resolviendo la URL, ni con `alr=yes`, ni cambiando cabeceras — todo eso
+está probado y descartado en `crates/ytm-spike/src/bench.rs`.
+
+La Fase 0 se validó con `dQw4w9WgXcQ`, que resulta ser una excepción y se
+descarga entero. Fue un error de muestreo: se eligió por estar siempre
+disponible, y esa misma propiedad lo hace anormalmente permisivo.
+
+Para resolverlo hay que generar un poToken ejecutando el desafío JavaScript de
+BotGuard. La buena noticia es que Tauri ya embebe un webview, así que se puede
+hacer en una ventana oculta sin añadir dependencias nuevas. Es el siguiente
+trabajo pendiente, y el más importante.
+
 ## Estado
 
 | Fase | Estado |
@@ -30,8 +49,19 @@ YouTube cambia algo, solo hay que tocar un crate.
 ## Ejecutar
 
 ```bash
-npm install --prefix apps/desktop
-cargo run -p posible
+cd apps/desktop
+npm install     # solo la primera vez
+npm run tauri dev
+```
+
+`npm run tauri dev` levanta Vite y la aplicación juntos. `cargo run -p posible`
+por su cuenta **no** basta: la app en modo desarrollo espera el servidor de Vite
+en el puerto 1420.
+
+Para generar un ejecutable de verdad:
+
+```bash
+npm run tauri build --prefix apps/desktop
 ```
 
 ## Herramientas de diagnóstico

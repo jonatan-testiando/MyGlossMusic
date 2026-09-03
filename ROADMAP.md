@@ -55,8 +55,16 @@ Verificado con conexión nueva y rango en mitad del archivo, para descartar que
 fuera reutilización de TLS o trato especial al primer trozo. Tiempo real exige
 0.016 MB/s.
 
-**Consecuencia: no necesitamos motor JavaScript, ni descifrar `n`, ni poToken.**
-Se elimina el riesgo más grande del proyecto y una dependencia enorme.
+**Consecuencia: no necesitamos descifrar el parámetro `n`.**
+
+> ⚠️ **CORREGIDO el 2026-09-03.** La frase original decía además "ni poToken".
+> Era falso. Esta fase se validó con un único vídeo, `dQw4w9WgXcQ`, que resultó
+> ser una excepción. Medido después con `ytm-spike limits` sobre 6 vídeos, 5 de
+> 6 cortan en 1 MiB (~65 s) con 403. **Sí hace falta poToken.** Ver la sección
+> "Limitación conocida" del README.
+>
+> Lección de método: validar el camino crítico con una sola muestra, y encima
+> con la más conocida (que por eso mismo es la más permisiva), no es validar.
 
 Efecto en la práctica sobre la misma canción: **106.5 s → 0.1 s**.
 
@@ -150,6 +158,11 @@ Lo que de verdad diferencia el proyecto.
 
 ## Pendiente, por orden de valor
 
+0. **poToken — BLOQUEANTE.** Sin él la reproducción se corta a los ~65 s en casi
+   todo. Hay que ejecutar el desafío de BotGuard; Tauri ya embebe un webview,
+   así que puede hacerse en una ventana oculta sin dependencias nuevas.
+   Descartado y medido: reintentos, re-resolver la URL, `alr=yes`, `rn`/`rbuf`,
+   User-Agent del cliente y GET completo. Todo en `bench.rs`.
 1. **CI que detecte roturas de YouTube** antes que el usuario.
 2. **Normalización de volumen** con `loudness_db`, que ya se extrae.
 3. **Renovación de URL caducada** (~6 h) sin cortar la reproducción.
