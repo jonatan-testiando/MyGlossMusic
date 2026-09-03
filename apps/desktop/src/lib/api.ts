@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { mockApi } from "./mock";
 
 export interface Track {
@@ -112,9 +113,9 @@ const realApi = {
   diagnose: () => invoke<ClientHealth[]>("diagnose"),
   extractorStatus: () => invoke<ExtractorStatus>("extractor_status"),
 
-  minimize: () => invoke<void>("window_minimize"),
-  toggleMaximize: () => invoke<void>("window_toggle_maximize"),
-  close: () => invoke<void>("window_close"),
+  minimize: () => (inTauri ? getCurrentWindow().minimize() : Promise.resolve()),
+  toggleMaximize: () => (inTauri ? getCurrentWindow().toggleMaximize() : Promise.resolve()),
+  close: () => (inTauri ? getCurrentWindow().close() : Promise.resolve()),
 
   onPlayback: (cb: (s: PlaybackState) => void) =>
     listen<PlaybackState>("playback", (e) => cb(e.payload)),

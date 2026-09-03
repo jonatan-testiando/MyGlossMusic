@@ -526,11 +526,12 @@ impl Inner {
         match self.player.try_seek(pos) {
             Ok(()) => {
                 self.seek_base = Duration::ZERO;
+                self.publish();
                 Ok(())
             }
             Err(e) => {
-                tracing::debug!(error = %e, "seek no soportado por la fuente");
-                Err(anyhow::anyhow!("no se pudo saltar a esa posicion"))
+                tracing::warn!(error = %e, ?pos, "seek no soportado o fallo");
+                Err(anyhow::anyhow!("no se pudo saltar a esa posicion: {e}"))
             }
         }
     }

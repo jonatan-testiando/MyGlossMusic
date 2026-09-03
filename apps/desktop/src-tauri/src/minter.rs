@@ -282,6 +282,8 @@ pub async fn mint_from(app: &AppHandle, video_id: &str, origin: Origin) -> Resul
     };
     let url = target.parse().context("URL de YouTube Music invalida")?;
 
+    tracing::warn!(video_id = %video_id, ?origin, "ALERTA MINTER: Creando ventana WebView invisible para acuñar...");
+
     let slot_for_nav = Arc::clone(&slot);
     let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::External(url))
         .title("")

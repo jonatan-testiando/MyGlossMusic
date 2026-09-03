@@ -11,6 +11,7 @@ mod minter;
 mod palette;
 mod thumbs;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -85,12 +86,14 @@ async fn playlist(
 
 #[tauri::command]
 fn play_queue(state: tauri::State<'_, App>, tracks: Vec<TrackInput>, start: usize) {
+    tracing::info!(count = tracks.len(), start, "Comando play_queue recibido");
     let tracks: Vec<TrackInfo> = tracks.into_iter().map(Into::into).collect();
     state.engine.send(Command::SetQueue { tracks, start });
 }
 
 #[tauri::command]
 fn play_now(state: tauri::State<'_, App>, video_id: String) {
+    tracing::info!(video_id = %video_id, "Comando play_now recibido");
     state.engine.send(Command::PlayNow(video_id));
 }
 
@@ -322,12 +325,12 @@ async fn diagnose(state: tauri::State<'_, App>) -> Result<Vec<ClientHealth>, Str
 // --------------------------------------------------------------------------
 
 #[tauri::command]
-fn window_minimize(window: tauri::Window) {
+fn window_minimize(window: tauri::WebviewWindow) {
     let _ = window.minimize();
 }
 
 #[tauri::command]
-fn window_toggle_maximize(window: tauri::Window) {
+fn window_toggle_maximize(window: tauri::WebviewWindow) {
     if window.is_maximized().unwrap_or(false) {
         let _ = window.unmaximize();
     } else {
@@ -336,7 +339,7 @@ fn window_toggle_maximize(window: tauri::Window) {
 }
 
 #[tauri::command]
-fn window_close(window: tauri::Window) {
+fn window_close(window: tauri::WebviewWindow) {
     let _ = window.close();
 }
 
@@ -344,6 +347,15 @@ fn window_close(window: tauri::Window) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "windows")]
+    {
+        // Evita que Chromium/WebView2 congele o suspenda el bucle de renderizado
+        // y de mensajes cuando la ventana pasa a estar oculta o minimizada.
+        let cur = std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").unwrap_or_default();
+        let args = format!("{cur} --disable-background-timer-throttling --disable-backgrounding-occluded-windows");
+        std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", args.trim());
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -352,9 +364,38 @@ pub fn run() {
         .with_target(false)
         .init();
 
+    let is_minimized = Arc::new(AtomicBool::new(false));
+    let is_minimized_for_event = Arc::clone(&is_minimized);
+    let is_minimized_for_setup = Arc::clone(&is_minimized);
+
     thumbs::register(tauri::Builder::default())
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
+        .on_window_event(move |window, event| {
+            match event {
+                tauri::WindowEvent::Resized(size) => {
+                    if size.width == 0 || size.height == 0 {
+                        is_minimized_for_event.store(true, Ordering::Release);
+                    } else {
+                        let was = is_minimized_for_event.swap(false, Ordering::AcqRel);
+                        if was {
+                            if let Some(app) = window.try_state::<App>() {
+                                let state = app.engine.state();
+                                let _ = window.emit("playback", state);
+                            }
+                        }
+                    }
+                }
+                tauri::WindowEvent::Focused(true) => {
+                    if let Some(app) = window.try_state::<App>() {
+                        let state = app.engine.state();
+                        let _ = window.emit("playback", state);
+                    }
+                }
+                _ => {}
+            }
+        })
+        .setup(move |app| {
+            let is_minimized_for_rx = Arc::clone(&is_minimized_for_setup);
             // `setup` corre FUERA del contexto del runtime asincrono, asi que
             // cualquier `tokio::spawn` dentro de `Engine::start` entraria en
             // panico ("there is no reactor running"). Entramos en el runtime de
@@ -378,11 +419,19 @@ pub fn run() {
                     let h = handle_for_mint.clone();
                     let y = ytdlp.clone();
                     Box::pin(async move {
+                        tracing::info!(video_id = %video_id, "source_provider: resolviendo fuente de audio...");
                         if let Some(y) = y {
+                            tracing::info!(video_id = %video_id, "Iniciando descarga de pista con yt-dlp...");
                             match y.download(&video_id, &dir).await {
                                 Ok(d) => {
                                     let info = d.info.clone();
                                     let mime = info.mime();
+                                    tracing::info!(
+                                        video_id = %video_id,
+                                        title = ?info.title,
+                                        path = ?info.path,
+                                        "yt-dlp resolvio con exito la pista"
+                                    );
                                     return Ok(ytm_audio::Provided::External {
                                         path: info.path,
                                         size: info.size,
@@ -399,7 +448,9 @@ pub fn run() {
                                 }
                             }
                         }
+                        tracing::warn!(video_id = %video_id, "Llamando a minter::mint (posible ventana oculta)...");
                         let url = minter::mint(&h, &video_id).await?;
+                        tracing::info!(video_id = %video_id, "minter::mint finalizo con exito");
                         Ok(ytm_audio::Provided::Url { url, size: None, mime: None })
                     })
                 });
@@ -430,26 +481,11 @@ pub fn run() {
             // pide al compositor, que ademas dibuja borde y sombra nativos.
             #[cfg(target_os = "windows")]
             if let Some(w) = app.get_webview_window("main") {
-                if let Ok(hwnd) = w.hwnd() {
-                    #[link(name = "dwmapi")]
-                    extern "system" {
-                        fn DwmSetWindowAttribute(
-                            h: isize,
-                            attr: u32,
-                            value: *const core::ffi::c_void,
-                            size: u32,
-                        ) -> i32;
-                    }
-                    const DWMWA_WINDOW_CORNER_PREFERENCE: u32 = 33;
-                    const DWMWCP_ROUND: u32 = 2;
-                    unsafe {
-                        DwmSetWindowAttribute(
-                            hwnd.0 as isize,
-                            DWMWA_WINDOW_CORNER_PREFERENCE,
-                            &DWMWCP_ROUND as *const u32 as *const _,
-                            4,
-                        );
-                    }
+                let _ = w.show();
+                let _ = w.set_focus();
+                #[cfg(debug_assertions)]
+                {
+                    w.open_devtools();
                 }
             }
 
@@ -565,28 +601,11 @@ pub fn run() {
                 let mut last_prefs = (f32::NAN, String::new(), false);
                 let mut last_sent_rev: Option<u64> = None;
                 let mut last_media = (String::new(), false);
-                let mut last_media_push = std::time::Instant::now();
                 let mut media_primed = false;
 
                 while rx.changed().await.is_ok() {
                     let state = rx.borrow().clone();
 
-                    // La cola solo viaja cuando su revision cambia. Con una
-                    // playlist de cientos de pistas, serializarla diez veces
-                    // por segundo atascaba el IPC, y el atasco se cobraba al
-                    // restaurar la ventana tras minimizar.
-                    let mut wire = state.clone();
-                    if last_sent_rev == Some(wire.queue_rev) {
-                        wire.queue = Vec::new();
-                    } else {
-                        last_sent_rev = Some(wire.queue_rev);
-                    }
-                    let _ = handle.emit("playback", wire);
-
-                    // La tarjeta multimedia del sistema (SMTC) va por COM en el
-                    // HILO PRINCIPAL. Actualizarla en cada tick lo saturaba:
-                    // metadatos solo al cambiar de pista o de estado, posicion
-                    // como mucho cada 2 s.
                     let media_key = (
                         state
                             .track
@@ -597,12 +616,29 @@ pub fn run() {
                     );
                     let track_changed = !media_primed || media_key.0 != last_media.0;
                     let play_changed = !media_primed || media_key.1 != last_media.1;
-                    let pos_due =
-                        last_media_push.elapsed() >= std::time::Duration::from_secs(2);
-                    if smtc_enabled && (track_changed || play_changed || pos_due) {
+
+                    // Si la ventana está minimizada, no enviamos 10 eventos por segundo
+                    // a WebView2 (Chromium suspende su renderizado y acumular mensajes IPC
+                    // bloqueaba la ventana al restaurar). Solo emitimos si cambió de pista
+                    // o el estado de reproducción.
+                    let is_min = is_minimized_for_rx.load(Ordering::Acquire);
+                    if !is_min || track_changed || play_changed {
+                        let mut wire = state.clone();
+                        if last_sent_rev == Some(wire.queue_rev) {
+                            wire.queue = Vec::new();
+                        } else {
+                            last_sent_rev = Some(wire.queue_rev);
+                        }
+                        let _ = handle.emit("playback", wire);
+                    }
+
+                    // La tarjeta multimedia del sistema (SMTC) va por COM en el
+                    // HILO PRINCIPAL. Actualizarla solo cuando cambie de pista o
+                    // de estado play/pause, NUNCA en un sondeo periódico de posición,
+                    // que satura el bucle de mensajes de Windows al minimizar.
+                    if smtc_enabled && (track_changed || play_changed) {
                         media_primed = true;
                         last_media = media_key;
-                        last_media_push = std::time::Instant::now();
                         let for_media = state.clone();
                         let _ = handle.run_on_main_thread(move || {
                             if track_changed {

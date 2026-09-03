@@ -158,15 +158,24 @@ impl SymphoniaSource {
     /// Salta a una posicion. Devuelve error si el formato no lo permite.
     pub fn seek(&mut self, pos: Duration) -> Result<()> {
         let time = Time::from(pos.as_secs_f64());
-        self.format
-            .seek(
-                SeekMode::Accurate,
-                SeekTo::Time {
-                    time,
-                    track_id: Some(self.track_id),
-                },
-            )
-            .context("el formato no permite saltar")?;
+        let res = self.format.seek(
+            SeekMode::Accurate,
+            SeekTo::Time {
+                time,
+                track_id: Some(self.track_id),
+            },
+        );
+        if res.is_err() {
+            self.format
+                .seek(
+                    SeekMode::Coarse,
+                    SeekTo::Time {
+                        time,
+                        track_id: Some(self.track_id),
+                    },
+                )
+                .context("el formato no permite saltar a esa posicion")?;
+        }
         self.decoder.reset();
         self.buffer.clear();
         self.cursor = 0;
@@ -207,6 +216,15 @@ impl rodio::Source for SymphoniaSource {
 
     fn total_duration(&self) -> Option<Duration> {
         self.duration
+    }
+
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.seek(pos).map_err(|e| {
+            rodio::source::SeekError::Other(std::sync::Arc::new(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                e.to_string(),
+            )))
+        })
     }
 }
 

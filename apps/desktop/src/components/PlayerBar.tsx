@@ -5,6 +5,7 @@ import * as I from "./Icons";
 
 /** Barra de reproduccion flotante. */
 export function PlayerBar() {
+  let scrubBarRef!: HTMLDivElement;
   const [dragging, setDragging] = createSignal<number | null>(null);
   const [volumeOpen, setVolumeOpen] = createSignal(false);
 
@@ -12,17 +13,32 @@ export function PlayerBar() {
   const shown = () => dragging() ?? position();
   const pct = () => Math.min(100, (shown() / duration()) * 100);
 
-  const scrubTo = (e: MouseEvent, commit: boolean) => {
-    const bar = e.currentTarget as HTMLElement;
-    const rect = bar.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
-    const ms = ratio * duration();
+  const scrubTo = (clientX: number, commit: boolean) => {
+    if (!scrubBarRef) return;
+    const rect = scrubBarRef.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const ms = Math.floor(ratio * duration());
     if (commit) {
-      api.seek(Math.floor(ms));
+      api.seek(ms);
       setDragging(null);
     } else {
       setDragging(ms);
     }
+  };
+
+  const handleMouseDown = (e: MouseEvent) => {
+    scrubTo(e.clientX, false);
+    const onMove = (ev: MouseEvent) => {
+      scrubTo(ev.clientX, false);
+    };
+    const onUp = (ev: MouseEvent) => {
+      scrubTo(ev.clientX, true);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
   };
 
   const cycleRepeat = () => {
@@ -39,11 +55,10 @@ export function PlayerBar() {
             {fmtTime(shown())}
           </span>
           <div
-            class="scrub flex-1"
-            onMouseDown={(e) => scrubTo(e, false)}
-            onMouseMove={(e) => dragging() !== null && scrubTo(e, false)}
-            onMouseUp={(e) => scrubTo(e, true)}
-            onMouseLeave={() => setDragging(null)}
+            ref={scrubBarRef}
+            class="scrub flex-1 relative flex items-center py-2 cursor-pointer"
+            onMouseDown={handleMouseDown}
+            onClick={(e) => scrubTo(e.clientX, true)}
             role="slider"
             aria-label="Posición"
             aria-valuemin={0}

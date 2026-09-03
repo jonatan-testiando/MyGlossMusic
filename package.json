@@ -1,0 +1,10 @@
+{
+  "name": "posible-workspace",
+  "private": true,
+  "scripts": {
+    "tauri": "npm --prefix apps/desktop run tauri --",
+    "dev": "npm --prefix apps/desktop run dev",
+    "build": "npm --prefix apps/desktop run build",
+    "start": "npm --prefix apps/desktop run start"
+  }
+}

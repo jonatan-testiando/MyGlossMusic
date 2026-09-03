@@ -1,5 +1,5 @@
 import { createSignal, createEffect, on } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createStore, reconcile } from "solid-js/store";
 import { api, type PlaybackState, type Palette, type SearchResult, thumbAt } from "./api";
 
 const EMPTY_STATE: PlaybackState = {
@@ -61,17 +61,19 @@ function adoptQueue(s: PlaybackState): PlaybackState {
 }
 
 export function initStore() {
-  api.getState().then((s) => setPlayback(adoptQueue(s)));
+  api.getState().then((s) => setPlayback(reconcile(adoptQueue(s))));
 
   api.onPlayback((s) => {
-    setPlayback(adoptQueue(s));
+    setPlayback(reconcile(adoptQueue(s)));
     lastSync = { at: performance.now(), ms: s.positionMs };
     setLocalPos(s.positionMs);
   });
 
-  const tick = () => {
-    if (playback.playing) {
-      setLocalPos(lastSync.ms + (performance.now() - lastSync.at));
+  let lastTick = 0;
+  const tick = (now: number) => {
+    if (playback.playing && now - lastTick >= 100) {
+      lastTick = now;
+      setLocalPos(lastSync.ms + (now - lastSync.at));
     }
     requestAnimationFrame(tick);
   };

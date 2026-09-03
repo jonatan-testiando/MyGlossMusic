@@ -20,7 +20,7 @@ import * as I from "./Icons";
 
 export function TitleBar() {
   return (
-    <header class="drag-region flex h-11 shrink-0 items-center gap-3 px-3">
+    <header data-tauri-drag-region class="drag-region flex h-11 shrink-0 items-center gap-3 px-3">
       <div class="no-drag flex items-center gap-2 pl-1">
         <div
           class="grid size-6 place-items-center rounded-md"

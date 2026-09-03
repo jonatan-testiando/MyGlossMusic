@@ -17,10 +17,11 @@
         "height": 820,
         "minWidth": 940,
         "minHeight": 600,
+        "center": true,
+        "resizable": true,
         "decorations": false,
         "transparent": false,
-        "center": true,
-        "dragDropEnabled": false
+        "devtools": true
       }
     ],
     "security": {

@@ -1,81 +1,24 @@
-import { For, Show, createEffect, createMemo, createSignal, on } from "solid-js";
-import { api, type Lyrics } from "../lib/api";
-import { playback, position } from "../lib/store";
+import { For, Show } from "solid-js";
+import { api } from "../lib/api";
+import { playback } from "../lib/store";
 
-type Tab = "queue" | "lyrics";
-
-/** Panel derecho: cola y letra sincronizada. */
+/** Panel derecho: solo cola de reproducción (letras removidas para diagnóstico). */
 export function SidePanel() {
-  const [tab, setTab] = createSignal<Tab>("lyrics");
-  const [lyrics, setLyrics] = createSignal<Lyrics | null>(null);
-  const [loading, setLoading] = createSignal(false);
-
-  // La letra se pide una vez por pista, no en cada cambio de estado.
-  createEffect(
-    on(
-      () => playback.track?.videoId,
-      async () => {
-        const t = playback.track;
-        if (!t) {
-          setLyrics(null);
-          return;
-        }
-        setLoading(true);
-        try {
-          setLyrics(await api.getLyrics(t.title, t.author, playback.durationMs));
-        } catch {
-          setLyrics(null);
-        } finally {
-          setLoading(false);
-        }
-      },
-    ),
-  );
-
   return (
     <aside class="panel flex w-[400px] shrink-0 flex-col overflow-hidden">
-      <div class="flex shrink-0 items-center gap-1 p-2">
-        <TabButton active={tab() === "queue"} onClick={() => setTab("queue")}>
-          En cola
-        </TabButton>
-        <TabButton active={tab() === "lyrics"} onClick={() => setTab("lyrics")}>
-          Letra
-        </TabButton>
-        <Show when={tab() === "lyrics" && lyrics()}>
-          <span class="chip ml-1 shrink-0 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider opacity-60">
-            {lyrics()!.source}
-          </span>
-        </Show>
+      <div class="flex shrink-0 items-center justify-between p-3 border-b border-[var(--line)]">
+        <span class="text-[12px] font-semibold tracking-wide uppercase opacity-70">
+          En cola ({playback.queue.length})
+        </span>
       </div>
-
-      <Show when={tab() === "queue"}>
-        <QueueList />
-      </Show>
-      <Show when={tab() === "lyrics"}>
-        <LyricsView lyrics={lyrics()} loading={loading()} />
-      </Show>
+      <QueueList />
     </aside>
-  );
-}
-
-function TabButton(p: { active: boolean; onClick: () => void; children: string }) {
-  return (
-    <button
-      class="flex-1 rounded-lg px-3 py-2 text-[11px] font-semibold uppercase tracking-wider transition-colors"
-      classList={{
-        "bg-[var(--panel-strong)]": p.active,
-        "opacity-45 hover:opacity-75": !p.active,
-      }}
-      onClick={p.onClick}
-    >
-      {p.children}
-    </button>
   );
 }
 
 function QueueList() {
   return (
-    <div class="scroll-area flex-1 px-2 pb-2">
+    <div class="scroll-area flex-1 px-2 py-2">
       <Show
         when={playback.queue.length > 0}
         fallback={<Empty>La cola está vacía.</Empty>}
@@ -105,122 +48,6 @@ function QueueList() {
         </For>
       </Show>
     </div>
-  );
-}
-
-function LyricsView(p: { lyrics: Lyrics | null; loading: boolean }) {
-  let container!: HTMLDivElement;
-
-  /** Indice de la linea que suena ahora. */
-  const activeIndex = createMemo(() => {
-    const lines = p.lyrics?.lines;
-    if (!lines?.length) return -1;
-    const t = position();
-    // Busqueda binaria: la letra puede tener cientos de lineas y esto corre en
-    // cada fotograma.
-    let lo = 0;
-    let hi = lines.length - 1;
-    let found = -1;
-    while (lo <= hi) {
-      const mid = (lo + hi) >> 1;
-      if (lines[mid].startMs <= t) {
-        found = mid;
-        lo = mid + 1;
-      } else {
-        hi = mid - 1;
-      }
-    }
-    return found;
-  });
-
-  /**
-   * Progreso dentro de la linea actual, de 0 a 1.
-   *
-   * LRCLIB da sincronia POR LINEA, no por palabra. Interpolando la duracion de
-   * la linea se consigue el mismo barrido de texto que se ve en las apps
-   * bonitas, sin depender de datos por palabra que casi no existen.
-   */
-  const lineProgress = createMemo(() => {
-    const lines = p.lyrics?.lines;
-    const i = activeIndex();
-    if (!lines || i < 0) return 0;
-    const { startMs, endMs } = lines[i];
-    const span = Math.max(1, endMs - startMs);
-    return Math.min(1, Math.max(0, (position() - startMs) / span));
-  });
-
-  // Desplaza para mantener centrada la linea activa.
-  createEffect(
-    on(activeIndex, (i) => {
-      if (i < 0 || !container) return;
-      const el = container.querySelector<HTMLElement>(`[data-line="${i}"]`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }),
-  );
-
-  return (
-    <Show
-      when={!p.loading}
-      fallback={<Empty>Buscando letra…</Empty>}
-    >
-      <Show
-        when={p.lyrics}
-        fallback={
-          <Empty>
-            No hay letra para esta canción.
-            <br />
-            <span class="opacity-60">La cobertura de LRCLIB es irregular.</span>
-          </Empty>
-        }
-      >
-        <Show
-          when={p.lyrics!.synced}
-          fallback={
-            <div class="scroll-area flex-1 whitespace-pre-wrap px-5 pb-6 text-[14px] leading-relaxed opacity-70">
-              {p.lyrics!.plain}
-            </div>
-          }
-        >
-          <div ref={container} class="scroll-area flex-1 px-6 py-[42%]">
-            <For each={p.lyrics!.lines}>
-              {(line, i) => {
-                const active = () => i() === activeIndex();
-                const past = () => i() < activeIndex();
-                return (
-                  <p
-                    data-line={i()}
-                    class="cursor-pointer py-3 pr-2 text-[24px] font-extrabold leading-tight tracking-tight transition-all duration-500"
-                    classList={{
-                      "opacity-100 scale-100": active(),
-                      "opacity-30 scale-[0.97] blur-[1.5px]": !active(),
-                      "opacity-15": past(),
-                    }}
-                    style={
-                      active()
-                        ? {
-                            // El degradado con `background-clip: text` produce el
-                            // barrido. Solo cambia un porcentaje, asi que el
-                            // navegador no rehace el layout.
-                            background: `linear-gradient(90deg, var(--fg) ${
-                              lineProgress() * 100
-                            }%, rgb(255 255 255 / 0.3) ${lineProgress() * 100}%)`,
-                            "-webkit-background-clip": "text",
-                            "background-clip": "text",
-                            color: "transparent",
-                          }
-                        : undefined
-                    }
-                    onClick={() => api.seek(line.startMs)}
-                  >
-                    {line.text || " "}
-                  </p>
-                );
-              }}
-            </For>
-          </div>
-        </Show>
-      </Show>
-    </Show>
   );
 }
 
