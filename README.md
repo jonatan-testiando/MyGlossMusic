@@ -70,6 +70,8 @@ la pestaña **Diagnóstico**.
 | 4 · Persistencia local | ✅ favoritos, historial, ajustes · ⏳ sesión de YouTube |
 | 5 · Letras, teclas multimedia, Discord | ✅ (Discord sin verificar en vivo) |
 | 6 · Antifragilidad | ✅ diagnóstico y cascada · ⏳ CI |
+| 7 · Navegación | ✅ inicio, búsqueda, artista, álbum, playlist, historial |
+| 8 · Playlists propias | ✅ crear, añadir, quitar, borrar (locales) |
 
 ## Ejecutar
 
@@ -89,6 +91,25 @@ Para generar un ejecutable de verdad:
 npm run tauri build --prefix apps/desktop
 ```
 
+## Qué se puede hacer sin cuenta
+
+Todo lo que hay funciona **en modo anónimo**. Lo que eso permite y lo que no,
+medido y no supuesto:
+
+| | Sin sesión |
+|---|---|
+| Buscar (canciones, vídeos, artistas, álbumes, listas) | ✅ con paginación |
+| Sugerencias mientras escribes | ✅ |
+| Radio de una canción (~50 recomendadas) | ✅ |
+| Página de artista, álbum y playlist | ✅ |
+| Feed de inicio de YouTube | ⚠️ solo 2 carruseles genéricos |
+| "Volver a escuchar" y recomendaciones personales | ❌ de Google · ✅ desde el historial local |
+| Playlists propias | ✅ locales, en SQLite |
+| Guardar una playlist **en tu cuenta de Google** | ❌ requiere sesión |
+
+El inicio combina las tres fuentes: tu historial, radios sembradas desde él, y
+los carruseles anónimos de YouTube.
+
 ## Herramientas de diagnóstico
 
 Cuando algo deje de sonar, esto es lo primero que hay que ejecutar:
@@ -104,6 +125,9 @@ Otros comandos:
 
 ```bash
 cargo run -p ytm-spike -- search kastra fool for you   # búsqueda
+cargo run -p ytm-spike -- suggest kastra               # sugerencias
+cargo run -p ytm-spike -- radio dQw4w9WgXcQ            # recomendaciones
+cargo run -p ytm-spike -- browse                       # feed de inicio
 cargo run -p ytm-spike -- bench dQw4w9WgXcQ            # ¿hay throttling?
 cargo run -p ytm-spike -- engine dQw4w9WgXcQ           # motor de audio
 ```
