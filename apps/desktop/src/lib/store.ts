@@ -19,6 +19,11 @@ const EMPTY_STATE: PlaybackState = {
 };
 
 const DEFAULT_PALETTE: Palette = {
+  stops: [
+    { color: "#3b3358", weight: 0.5 },
+    { color: "#5b4a8a", weight: 0.3 },
+    { color: "#2a2740", weight: 0.2 },
+  ],
   background: "#12101a",
   backgroundAlt: "#1c1826",
   accent: "#8b7fd4",

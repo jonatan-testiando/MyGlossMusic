@@ -66,6 +66,15 @@ const health: ClientHealth[] = [
 
 /** Paleta de ejemplo, tomada de una portada violeta/neon como la de la captura. */
 const palette: Palette = {
+  // Tal y como los devolveria `palette.rs` para esta portada: ya pasados por
+  // `ambient()`, no los colores crudos de la imagen.
+  stops: [
+    { color: "#7a4bbf", weight: 0.42 },
+    { color: "#c46ad6", weight: 0.24 },
+    { color: "#5647a8", weight: 0.18 },
+    { color: "#2f95b0", weight: 0.10 },
+    { color: "#d96f9c", weight: 0.06 },
+  ],
   background: "#1a1030",
   backgroundAlt: "#2a1a4a",
   accent: "#c77dff",

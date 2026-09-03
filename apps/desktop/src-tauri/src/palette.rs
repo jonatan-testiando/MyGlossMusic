@@ -13,10 +13,29 @@
 
 use serde::Serialize;
 
+/// Un color de la portada listo para pintar como luz ambiental.
+///
+/// La interfaz pinta un degradado radial por cada parada; el peso decide cual
+/// ocupa mas superficie, para que la ventana se parezca a la portada y no a una
+/// mezcla generica.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Stop {
+    pub color: String,
+    /// Fraccion de la portada que ocupa este color, de 0 a 1.
+    pub weight: f32,
+}
+
 /// Paleta lista para la interfaz.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Palette {
+    /// Colores de la malla ambiental, del que mas ocupa al que menos.
+    ///
+    /// Los cuatro campos de abajo son roles fijos derivados de estos; se
+    /// conservan porque la interfaz los usa para texto, acentos y superficies,
+    /// donde hace falta un color concreto y no una malla.
+    pub stops: Vec<Stop>,
     /// Color dominante, oscurecido para servir de fondo.
     pub background: String,
     /// Segundo color del degradado.
@@ -32,6 +51,11 @@ pub struct Palette {
 impl Default for Palette {
     fn default() -> Self {
         Self {
+            stops: vec![
+                Stop { color: "#3b3358".into(), weight: 0.5 },
+                Stop { color: "#5b4a8a".into(), weight: 0.3 },
+                Stop { color: "#2a2740".into(), weight: 0.2 },
+            ],
             background: "#12101a".into(),
             background_alt: "#1c1826".into(),
             accent: "#8b7fd4".into(),
@@ -150,13 +174,41 @@ pub fn from_pixels(pixels: &[(u8, u8, u8)]) -> Palette {
         .map(|c| c.center)
         .unwrap_or(dominant);
 
-    build(dominant, accent)
+    // Paradas de la malla: los grupos con presencia real, del mas grande al mas
+    // pequeno. Se descartan los que no llegan al 2% porque un pixel perdido de
+    // color chillon tinaria toda la ventana.
+    let mut ranked: Vec<&Cluster> = clusters.iter().filter(|c| c.count * 50 > total).collect();
+    ranked.sort_by(|a, b| b.count.cmp(&a.count));
+    let stops: Vec<Stop> = ranked
+        .iter()
+        .map(|c| Stop {
+            color: hex(ambient(c.center)),
+            weight: c.count as f32 / total as f32,
+        })
+        .collect();
+
+    build(stops, dominant, accent)
+}
+
+/// Lleva un color de la portada al rango en el que funciona como luz ambiental.
+///
+/// El limite de arriba evita que una portada clara apague el texto blanco; el de
+/// abajo evita que una oscura se pierda contra el fondo y deje la ventana negra.
+/// El croma se empuja hacia un valor fijo: sin esto, las portadas apagadas dan
+/// una malla gris indistinguible del fondo por defecto.
+fn ambient(c: Oklab) -> Oklab {
+    let boost = (0.16 / c.chroma().max(0.01)).clamp(0.85, 2.2);
+    Oklab {
+        l: c.l.clamp(0.42, 0.70),
+        a: c.a * boost,
+        b: c.b * boost,
+    }
 }
 
 /// Ajusta luminosidad y contraste para que la paleta sea usable como interfaz.
 ///
 /// Sin esto, una portada muy clara daria un fondo blanco con texto blanco.
-fn build(dominant: Oklab, accent: Oklab) -> Palette {
+fn build(stops: Vec<Stop>, dominant: Oklab, accent: Oklab) -> Palette {
     // El fondo se lleva a un rango oscuro fijo. Conserva el tono de la portada
     // (que es lo que da la sensacion de "la app se tinta con la cancion") pero
     // garantiza que el texto claro siempre contraste.
@@ -185,6 +237,7 @@ fn build(dominant: Oklab, accent: Oklab) -> Palette {
     };
 
     Palette {
+        stops,
         background: hex(bg),
         background_alt: hex(bg_alt),
         accent: hex(ac),
@@ -323,6 +376,28 @@ mod tests {
         let (r, g, b) = ((bg >> 16) & 255, (bg >> 8) & 255, bg & 255);
         let lum = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
         assert!(lum < 90.0, "fondo demasiado claro: {} (lum {lum})", p.background);
+    }
+
+    #[test]
+    fn siempre_hay_paradas_para_la_malla() {
+        // Una portada de un solo color sigue teniendo que dar algo que pintar:
+        // si `stops` viniera vacio, la ventana se quedaria negra.
+        let pixels: Vec<_> = (0..300).map(|_| (18u8, 40u8, 190u8)).collect();
+        let p = from_pixels(&pixels);
+        assert!(!p.stops.is_empty());
+        let suma: f32 = p.stops.iter().map(|s| s.weight).sum();
+        assert!(suma > 0.9 && suma <= 1.001, "los pesos no cubren la portada: {suma}");
+    }
+
+    #[test]
+    fn las_paradas_van_de_mayor_a_menor_peso() {
+        let pixels: Vec<_> = (0..600)
+            .map(|i| if i % 6 == 0 { (250u8, 30u8, 40u8) } else { (20u8, 30u8, 120u8) })
+            .collect();
+        let p = from_pixels(&pixels);
+        for par in p.stops.windows(2) {
+            assert!(par[0].weight >= par[1].weight, "paradas desordenadas: {:?}", p.stops);
+        }
     }
 
     #[test]

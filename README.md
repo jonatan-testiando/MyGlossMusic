@@ -129,8 +129,17 @@ redescubrir:
 - **itag 140 (AAC), no 251 (Opus).** Symphonia 0.6 sigue sin soportar Opus.
 - **La paleta se calcula en Oklab, no en RGB.** En RGB el k-means produce
   marrones sucios porque la distancia no se corresponde con lo que ve el ojo.
-- **El fondo no usa `backdrop-filter`.** La portada se pide a 48 px y se estira:
-  el reescalado del navegador hace de desenfoque, y es gratis.
+- **El fondo no pinta la portada, pinta sus colores.** Estirar la miniatura
+  desenfocada deja las formas del original a la vista, y taparlas exige una
+  viñeta oscura que apaga toda la ventana. En su lugar `palette.rs` devuelve
+  `stops[]` y la interfaz pinta un foco radial por color. Sin imagen no hay
+  formas que tapar, así que no hace falta viñeta. También es más barato: no hay
+  `filter: blur()` repintando cada fotograma, solo transformaciones en la GPU.
+- **Los focos del fondo llevan el color en `background-color` y el recorte en
+  `mask-image`.** Con el degradado en `background` el color no transiciona y el
+  cambio de canción corta en seco. Y son siempre cinco, aunque la portada dé
+  menos colores: si el número de nodos cambiara, los que sobran desaparecerían
+  de golpe en vez de apagarse.
 - **La búsqueda recorre el JSON en vez de indexar rutas fijas.** Las rutas de
   InnerTube tienen ~10 niveles y cambian; los nombres de renderer no.
 - **Dos clientes HTTP separados.** El de streams es anónimo por construcción. El

@@ -3,6 +3,7 @@ import { TitleBar, Sidebar, HomeFeed, SearchView, LibraryView, Diagnostics } fro
 import { PlayerBar } from "./components/PlayerBar";
 import { SidePanel } from "./components/SidePanel";
 import { FullScreenLyrics } from "./components/FullScreenLyrics";
+import { Ambient } from "./components/Ambient";
 import {
   initStore,
   palette,
@@ -13,7 +14,6 @@ import {
   playerViewOpen,
   setPlayerViewOpen,
 } from "./lib/store";
-import { thumbAt } from "./lib/api";
 import * as I from "./components/Icons";
 import "./styles.css";
 
@@ -30,14 +30,10 @@ export default function App() {
     root.setProperty("--fg", p.foreground);
   });
 
-  const bg = () => thumbAt(playback.track?.thumbnail, 120);
-
   return (
     <div class="app-shell flex flex-col h-screen overflow-hidden select-none">
-      {/* Capas de fondo difuso y viñeta ambiental cinematográfica */}
-      <Show when={bg()}>
-        <div class="bg-layer visible" style={{ "background-image": `url(${bg()})` }} />
-      </Show>
+      {/* Iluminación ambiental con los colores de la portada */}
+      <Ambient />
       <div class="bg-scrim" />
 
       {/* Cabecera superior YouTube Music */}
@@ -58,7 +54,7 @@ export default function App() {
                 <img
                   src={coverUrl()!}
                   alt=""
-                  class="w-full h-full rounded-2xl object-cover shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] ring-1 ring-white/15 transition-transform duration-500"
+                  class="w-full h-full rounded-2xl object-cover shadow-[0_25px_60px_-15px_rgba(0,0,0,0.85)] transition-transform duration-500"
                   classList={{ "scale-[0.98] opacity-90": !playback.playing }}
                 />
               </div>

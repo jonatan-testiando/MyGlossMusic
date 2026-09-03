@@ -58,7 +58,15 @@ export interface SavedTrack {
   at: number;
 }
 
+/** Un color de la portada, con la superficie que ocupa (0..1). */
+export interface Stop {
+  color: string;
+  weight: number;
+}
+
 export interface Palette {
+  /** Colores de la malla ambiental, del que mas ocupa al que menos. */
+  stops: Stop[];
   background: string;
   backgroundAlt: string;
   accent: string;

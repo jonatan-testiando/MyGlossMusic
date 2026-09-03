@@ -34,8 +34,8 @@ body,
 }
 
 body {
-  font-family: "Segoe UI Variable Display", "Segoe UI", Inter, system-ui, -apple-system,
-    sans-serif;
+  font-family: Roboto, "Segoe UI Variable Text", "Segoe UI", Inter, system-ui,
+    -apple-system, sans-serif;
   color: var(--fg);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -56,36 +56,97 @@ body {
   isolation: isolate;
 }
 
-.bg-layer {
+/* --------------------------------------------------------------------------
+   Fondo ambiental
+
+   Cinco focos de color, uno por parada de la paleta, sobre el fondo oscuro.
+   El recorte lo hace `mask-image` y no un `radial-gradient` de fondo: asi el
+   color vive en `background-color`, que SI transiciona, y el cambio de cancion
+   funde de una paleta a la otra en vez de cortar en seco.
+   -------------------------------------------------------------------------- */
+
+.ambient {
   position: absolute;
-  inset: -15%;
+  inset: 0;
   z-index: -2;
-  background-size: cover;
-  background-position: center;
-  transform: scale(1.3) translateZ(0);
-  filter: blur(48px) saturate(1.8) brightness(0.65);
-  contain: strict;
-  opacity: 0;
-  transition: opacity 800ms var(--ease);
-  will-change: opacity;
+  overflow: hidden;
   pointer-events: none;
+  contain: strict;
+  /* El fondo base vive aqui y no en `.app-shell` porque los focos se mezclan en
+     `screen`, y `screen` solo suma sobre lo que hay dentro de su propio
+     contexto de apilamiento. Sobre transparente no sumaria nada. */
+  background: var(--bg);
 }
 
-.bg-layer.visible {
-  opacity: 0.7;
+.ambient-spot {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: var(--size);
+  /* Circulos, no elipses: la ventana es mas ancha que alta, y con porcentajes
+     en los dos ejes los focos saldrian aplastados. */
+  aspect-ratio: 1;
+  margin-left: calc(var(--size) / -2);
+  margin-top: calc(var(--size) / -2);
+
+  background-color: var(--c);
+  /* El foco que mas superficie ocupa en la portada tambien manda en la ventana. */
+  opacity: calc(0.38 + var(--w) * 0.72);
+  /* `screen` suma luz en vez de taparla: donde dos focos se cruzan sale un tercer
+     color mas claro, que es lo que hace que la ventana parezca iluminada y no
+     pintada. Con mezcla normal el resultado es plano y siempre mas oscuro que el
+     foco mas claro. */
+  mix-blend-mode: screen;
+
+  -webkit-mask-image: radial-gradient(closest-side, #000 0%, rgb(0 0 0 / 0.55) 45%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 0%, rgb(0 0 0 / 0.55) 45%, transparent 100%);
+
+  transition: background-color 900ms var(--ease), opacity 900ms var(--ease);
+  animation: ambient-drift 34s ease-in-out infinite alternate;
+  will-change: transform;
 }
 
-/* Vineta cinematografica que garantiza contraste del texto con iluminacion ambiental */
+/* Duraciones sin multiplos comunes para que los focos no vuelvan a alinearse:
+   si coincidieran, la deriva se leeria como un latido. */
+.ambient-spot:nth-child(2) {
+  animation-duration: 43s;
+  animation-delay: -7s;
+}
+.ambient-spot:nth-child(3) {
+  animation-duration: 51s;
+  animation-delay: -19s;
+  animation-direction: alternate-reverse;
+}
+.ambient-spot:nth-child(4) {
+  animation-duration: 39s;
+  animation-delay: -12s;
+  animation-direction: alternate-reverse;
+}
+.ambient-spot:nth-child(5) {
+  animation-duration: 61s;
+  animation-delay: -25s;
+}
+
+@keyframes ambient-drift {
+  from {
+    transform: translate3d(-4%, -3%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(5%, 4%, 0) scale(1.12);
+  }
+}
+
+/*
+ * Franjas de contraste. No es una vinieta: solo oscurece las dos bandas donde
+ * hay texto (cabecera y barra de reproduccion) y deja el centro luminoso.
+ */
 .bg-scrim {
   position: absolute;
   inset: 0;
   z-index: -1;
   background:
-    radial-gradient(circle at 75% 25%, var(--accent), transparent 50%),
-    radial-gradient(circle at 20% 80%, rgba(30, 40, 70, 0.4), transparent 50%),
-    radial-gradient(130% 100% at 50% 50%, transparent 20%, rgba(5, 5, 8, 0.9) 75%),
-    linear-gradient(to bottom, rgba(5, 5, 8, 0.35) 0%, rgba(5, 5, 8, 0.85) 100%);
-  transition: background 900ms var(--ease);
+    linear-gradient(to bottom, rgb(0 0 0 / 0.24) 0, transparent 110px),
+    linear-gradient(to top, rgb(0 0 0 / 0.30) 0, transparent 150px);
   pointer-events: none;
 }
 
@@ -102,12 +163,15 @@ body {
   border-radius: 20px;
 }
 
+/*
+ * La barra flota sobre el ambiente, sin fondo propio: una franja opaca cortaria
+ * el degradado en seco justo donde mas se nota. El contraste del texto lo pone
+ * `.bg-scrim`, que ya oscurece esta banda.
+ */
 .player-bar-container {
   width: 100%;
-  background: rgba(12, 12, 16, 0.82);
-  backdrop-filter: blur(35px);
-  -webkit-backdrop-filter: blur(35px);
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background: transparent;
+  border-top: 1px solid rgb(255 255 255 / 0.06);
 }
 
 .panel {
@@ -295,5 +359,12 @@ body {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+
+  /* La deriva del fondo es `infinite alternate`: acortarle la duracion no la
+     para, la convierte en un parpadeo. Se apaga entera. */
+  .ambient-spot {
+    animation: none !important;
+    transform: none;
   }
 }

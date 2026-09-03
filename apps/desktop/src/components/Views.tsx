@@ -11,7 +11,6 @@ import {
   runSearch,
   resultsLabel,
   playFromResults,
-  coverUrl,
   playSaved,
   playerViewOpen,
   setPlayerViewOpen,

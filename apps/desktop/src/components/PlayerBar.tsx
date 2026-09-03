@@ -1,6 +1,6 @@
 import { Show, createSignal } from "solid-js";
 import { api, fmtTime, thumbAt } from "../lib/api";
-import { playback, position, isFavorite, toggleFavorite, fullLyricsOpen, setFullLyricsOpen, playerViewOpen, setPlayerViewOpen } from "../lib/store";
+import { playback, position, isFavorite, toggleFavorite, playerViewOpen, setPlayerViewOpen } from "../lib/store";
 import * as I from "./Icons";
 
 /** Barra de reproducción inferior de extremo a extremo estilo glassy-music (7.webp / 9.mp4). */
