@@ -174,6 +174,18 @@ export const mockApi = {
     emit();
   },
   getState: async () => ({ ...state }),
+  radio: async () => ({
+    playlistId: "RDAMVMjig2aRZbHm4",
+    tracks: TRACKS.slice(1).map((t) => ({
+      videoId: t.videoId,
+      title: t.title,
+      subtitle: t.author,
+      duration: t.d,
+      thumbnail: COVER,
+    })),
+  }),
+  setUpNext: async () => {},
+
   searchSuggestions: async (q: string) => {
     const base = TRACKS.map((t) => t.title.toLowerCase());
     const extra = ["remix", "en directo", "1 hora", "slowed"];

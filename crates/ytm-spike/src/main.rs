@@ -106,6 +106,25 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
+        "radio" => {
+            let id = video_id_arg(&args)?;
+            let it = InnerTube::new()?;
+            let r = it.radio(&id).await?;
+            println!("
+  {} pistas en la radio de {id}
+", r.tracks.len());
+            for (i, t) in r.tracks.iter().take(10).enumerate() {
+                println!(
+                    "  {:>2}. {}  |  {}  |  {}",
+                    i + 1,
+                    t.title,
+                    t.subtitle,
+                    t.duration.as_deref().unwrap_or("?")
+                );
+            }
+            println!();
+            Ok(())
+        }
         "suggest" => {
             let q = args[1..].join(" ");
             anyhow::ensure!(!q.is_empty(), "falta la consulta");
@@ -202,21 +221,23 @@ async fn main() -> Result<()> {
 
 fn print_usage() {
     eprintln!(
-        "ytm-spike - validacion de extraccion y reproduccion
+        r#"ytm-spike - validacion de extraccion y reproduccion
 
-         USO:
-             ytm-spike probe <videoId>              prueba todos los clientes InnerTube
-             ytm-spike play  <videoId> [opciones]   extrae y reproduce
-             ytm-spike search <texto>               busca canciones
-             ytm-spike suggest <texto>              sugerencias del buscador
-             ytm-spike browse [browseId] [params]   inicio, artista o album
-             ytm-spike engine <videoId>             motor de audio
-             ytm-spike bench  <videoId>             mide el throttling
+USO:
+  ytm-spike probe   <videoId>            prueba todos los clientes InnerTube
+  ytm-spike play    <videoId> [opciones] extrae y reproduce
+  ytm-spike engine  <videoId>            motor de audio
+  ytm-spike bench   <videoId>            mide el throttling
+  ytm-spike search  <texto>              busca canciones
+  ytm-spike suggest <texto>              sugerencias del buscador
+  ytm-spike radio   <videoId>            cola de recomendaciones
+  ytm-spike browse  [browseId] [params]  inicio, artista o album
+  ytm-spike pl      <enlace>             contenido de una playlist
 
-         OPCIONES de play:
-             --client <id>   fuerza un cliente concreto (ios, android_vr, tv, ...)
-             --keep          conserva el archivo descargado
-"
+OPCIONES de play:
+  --client <id>   fuerza un cliente concreto (ios, android_vr, tv, ...)
+  --keep          conserva el archivo descargado
+"#
     );
 }
 

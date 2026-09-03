@@ -218,10 +218,19 @@ export async function runSearch(q: string) {
   if (!q.trim()) return;
   const c = classify(q);
 
-  // Un enlace de cancion suelto se reproduce directamente.
+  // Un enlace de cancion suelto se reproduce directamente, y detras va su
+  // radio igual que si se hubiera elegido en la busqueda.
   if (c.kind === "video") {
     api.playNow(c.value);
     setView("home");
+    setPlayerViewOpen(true);
+    api
+      .radio(c.value)
+      .then((r) => {
+        const resto = r.tracks.filter((t) => t.videoId !== c.value);
+        if (resto.length) api.setUpNext(resto.map(toTrack));
+      })
+      .catch((e) => console.error("no se pudo cargar la radio", e));
     return;
   }
 
@@ -247,20 +256,48 @@ export async function runSearch(q: string) {
   }
 }
 
-/** Reproduce un resultado y encola el resto, que es lo que espera el usuario. */
+/** Convierte un resultado de búsqueda o de radio en una pista de la cola. */
+function toTrack(r: SearchResult) {
+  return {
+    videoId: r.videoId,
+    title: r.title,
+    author: r.subtitle,
+    thumbnail: r.thumbnail,
+    durationMs: parseDuration(r.duration),
+  };
+}
+
+/**
+ * Reproduce una pista y llena la cola con su radio.
+ *
+ * Es lo que hace YouTube Music: eliges una canción y detrás vienen ~50
+ * recomendadas, no el resto de la búsqueda.
+ *
+ * La radio se pide DESPUÉS de arrancar el audio, no antes: la respuesta pesa
+ * más de un mega y esperarla dejaría un silencio de medio segundo cada vez que
+ * se pulsa una canción. Y se aplica con `setUpNext`, que sustituye lo que viene
+ * detrás sin tocar la pista actual — con `playQueue` la canción se reiniciaría
+ * justo cuando llegan las recomendaciones.
+ */
+export async function playWithRadio(track: SearchResult) {
+  api.playQueue([toTrack(track)], 0);
+  try {
+    const r = await api.radio(track.videoId);
+    // La semilla suele venir la primera en su propia radio.
+    const resto = r.tracks.filter((t) => t.videoId !== track.videoId);
+    if (resto.length) api.setUpNext(resto.map(toTrack));
+  } catch (e) {
+    // Sin radio se queda la pista suelta, que es lo que había antes.
+    console.error("no se pudo cargar la radio", e);
+  }
+}
+
+/** Reproduce un resultado y encola su radio. */
 export function playFromResults(index: number) {
   const list = results();
-  if (!list.length) return;
-  api.playQueue(
-    list.map((r) => ({
-      videoId: r.videoId,
-      title: r.title,
-      author: r.subtitle,
-      thumbnail: r.thumbnail,
-      durationMs: parseDuration(r.duration),
-    })),
-    index,
-  );
+  const elegido = list[index];
+  if (!elegido) return;
+  playWithRadio(elegido);
 }
 
 /** Portada grande de la pista actual. */

@@ -92,6 +92,25 @@ async fn playlist(
     state.innertube.playlist(&id).await.map_err(|e| e.to_string())
 }
 
+/// Cola de recomendaciones a partir de una pista.
+#[tauri::command]
+async fn radio(
+    state: tauri::State<'_, App>,
+    video_id: String,
+) -> Result<ytm_source::Radio, String> {
+    state.innertube.radio(&video_id).await.map_err(|e| e.to_string())
+}
+
+/// Sustituye lo que viene despues de la pista actual.
+///
+/// La radio se pide mientras la cancion ya suena; usar `play_queue` la
+/// reiniciaria desde cero.
+#[tauri::command]
+fn set_up_next(state: tauri::State<'_, App>, tracks: Vec<TrackInput>) {
+    let tracks: Vec<TrackInfo> = tracks.into_iter().map(Into::into).collect();
+    state.engine.send(Command::SetUpNext { tracks });
+}
+
 /// Sugerencias mientras se escribe.
 #[tauri::command]
 async fn search_suggestions(
@@ -735,6 +754,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             search,
             search_suggestions,
+            radio,
+            set_up_next,
             playlist,
             home,
             browse,

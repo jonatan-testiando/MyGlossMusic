@@ -76,6 +76,11 @@ export interface Palette {
   isLight: boolean;
 }
 
+export interface Radio {
+  playlistId: string | null;
+  tracks: SearchResult[];
+}
+
 export interface PlaylistResult {
   title: string | null;
   tracks: SearchResult[];
@@ -100,6 +105,9 @@ const realApi = {
 
   searchSuggestions: (query: string) =>
     invoke<string[]>("search_suggestions", { query }),
+
+  radio: (videoId: string) => invoke<Radio>("radio", { videoId }),
+  setUpNext: (tracks: Partial<Track>[]) => invoke<void>("set_up_next", { tracks }),
 
   playlist: (id: string) => invoke<PlaylistResult>("playlist", { id }),
 

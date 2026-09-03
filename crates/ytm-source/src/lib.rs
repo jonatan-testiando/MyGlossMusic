@@ -9,6 +9,7 @@ pub mod clients;
 pub mod innertube;
 pub mod model;
 pub mod playlist;
+pub mod radio;
 pub mod search;
 pub mod select;
 pub mod ytdlp;
@@ -18,6 +19,7 @@ pub use clients::ClientConfig;
 pub use innertube::{Attestation, InnerTube};
 pub use model::{Format, PlayerResponse};
 pub use playlist::{parse_input, Input, Playlist};
+pub use radio::Radio;
 pub use search::{Filter, SearchResult};
 
 use anyhow::{bail, Result};

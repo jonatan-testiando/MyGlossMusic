@@ -40,6 +40,20 @@ impl Queue {
         }
     }
 
+    /// Sustituye lo que viene DESPUES de la pista actual, sin tocarla.
+    ///
+    /// Es lo que necesita la radio: la cancion ya esta sonando cuando llegan
+    /// las recomendaciones, y volver a poner la cola entera la reiniciaria
+    /// desde cero. Devuelve cuantas pistas quedaron detras.
+    pub fn set_up_next(&mut self, items: Vec<TrackInfo>) -> usize {
+        self.items.truncate(self.index + 1);
+        self.items.extend(items);
+        if self.shuffle {
+            self.reshuffle();
+        }
+        self.items.len().saturating_sub(self.index + 1)
+    }
+
     pub fn items(&self) -> &[TrackInfo] {
         &self.items
     }
@@ -235,6 +249,23 @@ mod tests {
         let mut q = Queue::default();
         q.set_items((0..n).map(|i| track(&i.to_string())).collect(), 0);
         q
+    }
+
+    #[test]
+    fn set_up_next_no_toca_la_pista_actual() {
+        // La radio llega cuando la cancion ya suena: si `set_up_next` moviera
+        // el indice, la interfaz saltaria de pista sola.
+        let mut q = queue_of(3);
+        q.jump_to(1);
+        let antes = q.current().unwrap().video_id.clone();
+
+        let nuevas = vec![track("x"), track("y")];
+        let detras = q.set_up_next(nuevas);
+
+        assert_eq!(q.current().unwrap().video_id, antes, "cambio la pista actual");
+        assert_eq!(q.index(), 1);
+        assert_eq!(detras, 2);
+        assert_eq!(q.len(), 4, "deberia quedar 0,1 + las dos nuevas");
     }
 
     #[test]

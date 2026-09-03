@@ -79,6 +79,8 @@ pub enum Command {
     PlayNow(String),
     /// Anade al final de la cola.
     Enqueue(TrackInfo),
+    /// Sustituye lo que viene despues de la pista actual, sin reiniciarla.
+    SetUpNext { tracks: Vec<TrackInfo> },
     /// Salta a una posicion de la cola.
     JumpTo(usize),
     TogglePlay,
@@ -366,6 +368,13 @@ impl Inner {
                 self.queue_rev += 1;
                 self.queue.set_items(vec![track], 0);
                 self.start_current().await?;
+            }
+            Command::SetUpNext { tracks } => {
+                // No se llama a `start_current()`: la pista actual sigue
+                // sonando. Solo cambia lo que viene detras.
+                self.queue_rev += 1;
+                self.queue.set_up_next(tracks);
+                self.publish();
             }
             Command::Enqueue(t) => {
                 let was_empty = self.queue.is_empty();
