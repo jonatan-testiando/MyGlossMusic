@@ -8,6 +8,8 @@ export interface Track {
   title: string;
   author: string;
   thumbnail: string | null;
+  /** `null` mientras la pista no se ha resuelto. La interfaz deja el hueco. */
+  durationMs: number | null;
 }
 
 export interface SearchResult {
@@ -139,6 +141,20 @@ const inTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 export const api: typeof realApi = inTauri
   ? realApi
   : (mockApi as unknown as typeof realApi);
+
+/**
+ * "3:28" o "1:02:33" a milisegundos.
+ *
+ * La busqueda ya trae la duracion como texto; convertirla evita que la cola se
+ * pinte sin duraciones hasta que cada pista se resuelva una por una.
+ */
+export function parseDuration(text: string | null | undefined): number | null {
+  if (!text) return null;
+  const parts = text.split(":").map((p) => Number(p.trim()));
+  if (parts.length < 2 || parts.length > 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  const seconds = parts.reduce((total, n) => total * 60 + n, 0);
+  return seconds * 1000;
+}
 
 /** Milisegundos a "m:ss". */
 export function fmtTime(ms: number): string {

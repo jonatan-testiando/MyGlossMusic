@@ -42,6 +42,9 @@ pub struct TrackInfo {
     pub title: Option<String>,
     pub author: Option<String>,
     pub thumbnail: Option<String>,
+    /// Duracion de la pista. Es `Option` porque la cola puede construirse con
+    /// ids pelados (un enlace pegado) y solo se sabe al resolver.
+    pub duration_ms: Option<u64>,
 }
 
 /// Resultado de resolver una pista: metadatos + stream de audio.
@@ -116,6 +119,14 @@ async fn try_client(it: &InnerTube, video_id: &str, client: ClientConfig) -> Res
                 .and_then(|d| d.thumbnail.as_ref())
                 .and_then(|t| t.thumbnails.last())
                 .map(|t| t.url.clone()),
+            // `lengthSeconds` es la duracion del video; `approxDurationMs` la
+            // del formato concreto. Se prefiere la primera y la segunda hace de
+            // respaldo, porque hay respuestas donde falta una u otra.
+            duration_ms: details
+                .and_then(|d| d.length_seconds.as_ref())
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(|s| s * 1000)
+                .or_else(|| fmt.approx_duration_ms.as_ref().and_then(|s| s.parse().ok())),
         },
         audio: AudioStream {
             url: fmt.url.clone().expect("best_audio garantiza url directa"),

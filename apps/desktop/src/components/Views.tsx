@@ -124,136 +124,99 @@ export function Sidebar() {
     { id: "home" as const, label: "Principal", icon: I.Home },
     { id: "explore" as const, label: "Explorar", icon: I.Compass },
     { id: "library" as const, label: "Biblioteca", icon: I.Library },
-    { id: "refresh" as const, label: "Actualizar", icon: I.Refresh },
   ];
 
+  // Mientras se mira la canción, la barra se encoge a un raíl de iconos: el
+  // espacio se lo queda la carátula y el panel derecho, como en la referencia.
+  // Al navegar vuelve a abrirse.
+  const collapsed = () => playerViewOpen() && !!playback.track;
+
+  const go = (id: (typeof items)[number]["id"]) => {
+    setView(id === "explore" ? "search" : id);
+    setPlayerViewOpen(false);
+  };
+
+  const isActive = (id: (typeof items)[number]["id"]) =>
+    !collapsed() && view() === (id === "explore" ? "search" : id);
+
   return (
-    <nav class="flex w-[215px] shrink-0 flex-col gap-1 py-3 pl-3 pr-2 z-10 select-none">
-      {/* Navegación principal */}
-      <div class="space-y-1">
+    <nav
+      class="flex shrink-0 flex-col gap-1 py-3 z-10 select-none transition-[width] duration-300 ease-out"
+      classList={{ "w-[72px] px-2 items-center": collapsed(), "w-[215px] pl-3 pr-2": !collapsed() }}
+    >
+      <div class="w-full space-y-1">
         <For each={items}>
-          {(item) => {
-            const isActive = () =>
-              (item.id === "home" && view() === "home" && !playerViewOpen()) ||
-              (item.id === "library" && view() === "library" && !playerViewOpen());
-            return (
-              <button
-                class="flex w-full items-center gap-4 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] font-medium transition-all"
-                classList={{
-                  "bg-white/15 text-white shadow-sm font-semibold": isActive(),
-                  "text-white/70 hover:text-white hover:bg-white/10": !isActive(),
-                }}
-                onClick={() => {
-                  if (item.id === "home") {
-                    setView("home");
-                    setPlayerViewOpen(false);
-                  } else if (item.id === "library") {
-                    setView("library");
-                    setPlayerViewOpen(false);
-                  } else if (item.id === "refresh") {
-                    location.reload();
-                  } else {
-                    setView("search");
-                    setPlayerViewOpen(false);
-                  }
-                }}
-              >
-                <item.icon size={19} class={isActive() ? "text-white" : "text-white/70"} />
+          {(item) => (
+            <button
+              class="flex w-full rounded-xl transition-all"
+              classList={{
+                "flex-col items-center gap-1 px-1 py-2.5": collapsed(),
+                "items-center gap-4 px-3.5 py-2.5 text-left text-[13.5px] font-medium": !collapsed(),
+                "bg-white/15 text-white shadow-sm font-semibold": isActive(item.id),
+                "text-white/70 hover:text-white hover:bg-white/10": !isActive(item.id),
+              }}
+              onClick={() => go(item.id)}
+              title={item.label}
+            >
+              <item.icon size={19} class={isActive(item.id) ? "text-white" : "text-white/70"} />
+              <span classList={{ "text-[10px] font-medium leading-none": collapsed() }}>
                 {item.label}
-              </button>
-            );
-          }}
+              </span>
+            </button>
+          )}
         </For>
       </div>
 
-      {/* Botón + Nueva playlist */}
-      <div class="pt-4 pb-2 px-1">
-        <button
-          class="flex w-full items-center justify-center gap-2 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-semibold py-2 px-3 text-white transition-all border border-white/10 shadow-sm"
-          onClick={() => {
-            setView("library");
-            setPlayerViewOpen(false);
-          }}
-        >
-          <I.Plus size={15} />
-          Nueva playlist
-        </button>
-      </div>
+      {/* Todo lo que sigue solo cabe con la barra abierta. */}
+      <Show when={!collapsed()}>
+        <div class="pt-4 pb-2 px-1">
+          <button
+            class="flex w-full items-center justify-center gap-2 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-semibold py-2 px-3 text-white transition-all border border-white/10 shadow-sm"
+            onClick={() => {
+              setView("library");
+              setPlayerViewOpen(false);
+            }}
+          >
+            <I.Plus size={15} />
+            Nueva playlist
+          </button>
+        </div>
 
-      <div class="my-2 h-[1px] bg-white/10 mx-2" />
+        <div class="my-2 h-[1px] bg-white/10 mx-2" />
 
-      {/* Listas de reproducción estilo glassy-music (Image 2 & 3) */}
-      <div class="scroll-area flex-1 px-1 space-y-1 overflow-y-auto">
-        <button
-          class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
-          onClick={() => {
-            setView("library");
-            setPlayerViewOpen(false);
-          }}
-        >
-          <div class="flex items-center gap-1.5 text-xs font-semibold text-white">
-            <I.Pin size={12} class="text-[var(--accent)] shrink-0" />
-            <span>Música que te gustó</span>
-          </div>
-          <span class="text-[10.5px] text-white/45 pl-4">Playlist autogenerada</span>
-        </button>
+        <div class="scroll-area flex-1 px-1 space-y-1 overflow-y-auto">
+          {/* La única playlist que existe de verdad hoy. Las demás llegan
+              cuando haya playlists locales; poner nombres de ejemplo aquí
+              solo hace que la app mienta sobre lo que tiene. */}
+          <button
+            class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
+            onClick={() => {
+              setView("library");
+              setPlayerViewOpen(false);
+            }}
+          >
+            <div class="flex items-center gap-1.5 text-xs font-semibold text-white">
+              <I.Pin size={12} class="text-[var(--accent)] shrink-0" />
+              <span>Música que te gustó</span>
+            </div>
+            <span class="text-[10.5px] text-white/45 pl-4">Playlist autogenerada</span>
+          </button>
+        </div>
 
-        <button
-          class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
-          onClick={() => {
-            setView("library");
-            setPlayerViewOpen(false);
-          }}
-        >
-          <div class="flex items-center gap-1.5 text-xs font-medium text-white/80">
-            <span>Perreo duro</span>
-          </div>
-          <span class="text-[10.5px] text-white/45">Jonatan Carrillo</span>
-        </button>
-
-        <button
-          class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
-          onClick={() => {
-            setView("library");
-            setPlayerViewOpen(false);
-          }}
-        >
-          <div class="flex items-center gap-1.5 text-xs font-medium text-white/80">
-            <span>6XX</span>
-          </div>
-          <span class="text-[10.5px] text-white/45">Sol1XD</span>
-        </button>
-
-        <button
-          class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
-          onClick={() => {
-            setView("library");
-            setPlayerViewOpen(false);
-          }}
-        >
-          <div class="flex items-center gap-1.5 text-xs font-medium text-white/80">
-            <span>Episodios para después</span>
-          </div>
-          <span class="text-[10.5px] text-white/45">Playlist autogenerada</span>
-        </button>
-
-        <button
-          class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10 mt-2"
-          onClick={() => {
-            setView("diagnostics");
-            setPlayerViewOpen(false);
-          }}
-        >
-          <div class="flex items-center gap-1.5 text-xs font-medium text-white/60">
-            <I.Stethoscope size={13} class="text-white/40 shrink-0" />
+        <div class="mt-auto space-y-1 px-1 pb-1">
+          <button
+            class="flex w-full items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-xs font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white/90"
+            onClick={() => {
+              setView("diagnostics");
+              setPlayerViewOpen(false);
+            }}
+          >
+            <I.Stethoscope size={13} class="shrink-0 text-white/40" />
             <span>Diagnóstico</span>
-          </div>
-        </button>
-      </div>
-
-      <div class="mt-auto px-3 pb-2 text-[11px] leading-relaxed text-white/30">
-        Modo anónimo
-      </div>
+          </button>
+          <div class="px-2.5 text-[11px] leading-relaxed text-white/30">Modo anónimo</div>
+        </div>
+      </Show>
     </nav>
   );
 }

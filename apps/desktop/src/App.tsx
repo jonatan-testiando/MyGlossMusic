@@ -50,7 +50,7 @@ export default function App() {
           <Show when={playerViewOpen() && playback.track}>
             {/* Columna Izquierda: Carátula panorámica 16:9 centrada */}
             <div class="flex-1 flex items-center justify-center p-6 min-w-0">
-              <div class="relative max-w-[620px] w-full aspect-video">
+              <div class="relative w-full max-w-[min(480px,calc(100vh-260px))] aspect-square">
                 <img
                   src={coverUrl()!}
                   alt=""

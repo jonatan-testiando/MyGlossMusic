@@ -227,6 +227,7 @@ mod tests {
             title: None,
             author: None,
             thumbnail: None,
+            duration_ms: None,
         }
     }
 

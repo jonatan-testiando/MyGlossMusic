@@ -297,6 +297,11 @@ async fn play(
                     title: details.as_ref().and_then(|d| d.title.clone()),
                     author: details.as_ref().and_then(|d| d.author.clone()),
                     thumbnail: None,
+                    duration_ms: details
+                        .as_ref()
+                        .and_then(|d| d.length_seconds.as_ref())
+                        .and_then(|s| s.parse::<u64>().ok())
+                        .map(|s| s * 1000),
                 },
                 audio: ytm_source::AudioStream {
                     url: fmt.url.clone().unwrap(),

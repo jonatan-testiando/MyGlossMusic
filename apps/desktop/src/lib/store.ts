@@ -1,6 +1,6 @@
 import { createSignal, createEffect, on } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { api, type PlaybackState, type Palette, type SearchResult, type Lyrics, thumbAt } from "./api";
+import { api, parseDuration, type PlaybackState, type Palette, type SearchResult, type Lyrics, thumbAt } from "./api";
 
 const EMPTY_STATE: PlaybackState = {
   track: null,
@@ -200,7 +200,10 @@ export async function runSearch(q: string) {
       setResults(p.tracks);
       setResultsLabel(`${p.title ?? "Playlist"} \u2022 ${p.tracks.length} pistas`);
     } else {
-      setResults(await api.search(c.value));
+      // Sin filtrar por "solo canciones": ese filtro mira unicamente la
+      // pestania Songs del catalogo y deja fuera videos, subidas de usuario,
+      // directos y remixes, que es justo lo que no se encontraba.
+      setResults(await api.search(c.value, false));
     }
   } catch (e) {
     console.error("busqueda fallida", e);
@@ -220,6 +223,7 @@ export function playFromResults(index: number) {
       title: r.title,
       author: r.subtitle,
       thumbnail: r.thumbnail,
+      durationMs: parseDuration(r.duration),
     })),
     index,
   );

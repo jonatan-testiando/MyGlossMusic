@@ -8,6 +8,7 @@
  * En la aplicacion real nunca se carga: dentro de Tauri existe
  * `window.__TAURI_INTERNALS__` y `api.ts` usa el backend de verdad.
  */
+import { parseDuration } from "./api";
 import type { ClientHealth, Lyrics, Palette, PlaybackState, SavedTrack, SearchResult } from "./api";
 
 const COVER = "https://i.ytimg.com/vi/jig2aRZbHm4/maxresdefault.jpg";
@@ -22,14 +23,26 @@ const TRACKS = [
 ];
 
 const state: PlaybackState = {
-  track: { videoId: TRACKS[0].videoId, title: TRACKS[0].title, author: TRACKS[0].author, thumbnail: COVER },
+  track: {
+    videoId: TRACKS[0].videoId,
+    title: TRACKS[0].title,
+    author: TRACKS[0].author,
+    thumbnail: COVER,
+    durationMs: parseDuration(TRACKS[0].d),
+  },
   playing: true,
   loading: false,
   positionMs: 23_000,
   durationMs: 208_000,
   volume: 0.8,
   buffered: 1,
-  queue: TRACKS.map((t) => ({ videoId: t.videoId, title: t.title, author: t.author, thumbnail: COVER })),
+  queue: TRACKS.map((t) => ({
+    videoId: t.videoId,
+    title: t.title,
+    author: t.author,
+    thumbnail: COVER,
+    durationMs: parseDuration(t.d),
+  })),
   queueIndex: 0,
   queueRev: 1,
   repeat: "off",

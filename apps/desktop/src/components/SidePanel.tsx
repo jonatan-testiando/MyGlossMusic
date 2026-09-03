@@ -1,67 +1,52 @@
 import { For, Show, createEffect, createSignal, on } from "solid-js";
-import { api, fmtTime, thumbAt } from "../lib/api";
+import { api, fmtTime, thumbAt, type Track } from "../lib/api";
 import { playback, lyrics, lyricsLoading, position, setFullLyricsOpen } from "../lib/store";
 import * as I from "./Icons";
 
 /** Panel derecho flotante de cristal escarchado idéntico a Image 2. */
+type TabId = "queue" | "lyrics" | "comments" | "similar";
+
 export function SidePanel() {
-  const [tab, setTab] = createSignal<"queue" | "lyrics" | "comments" | "similar">("queue");
+  const [tab, setTab] = createSignal<TabId>("queue");
 
   return (
     <aside class="glass-card flex w-[500px] max-w-[540px] h-full flex-col overflow-hidden shadow-[0_25px_60px_rgba(0,0,0,0.65)] rounded-3xl border border-white/10 select-none">
       {/* Cabecera con pestañas estilo Image 2 */}
-      <div class="flex shrink-0 items-center justify-between border-b border-white/10 px-5 py-3.5 bg-black/25">
-        <div class="flex items-center gap-2">
-          <button
-            class="px-3 py-1 text-[12px] font-bold tracking-wider uppercase transition-all duration-150 rounded-lg"
-            classList={{
-              "bg-white/20 text-white shadow-sm font-extrabold": tab() === "queue",
-              "text-white/50 hover:text-white/80": tab() !== "queue",
-            }}
-            onClick={() => setTab("queue")}
-          >
-            A continuación
-          </button>
-          <button
-            class="px-3 py-1 text-[12px] font-bold tracking-wider uppercase transition-all duration-150 rounded-lg"
-            classList={{
-              "bg-white/20 text-white shadow-sm font-extrabold": tab() === "lyrics",
-              "text-white/50 hover:text-white/80": tab() !== "lyrics",
-            }}
-            onClick={() => setTab("lyrics")}
-          >
-            Letra
-          </button>
-          <button
-            class="px-3 py-1 text-[12px] font-bold tracking-wider uppercase transition-all duration-150 rounded-lg"
-            classList={{
-              "bg-white/20 text-white shadow-sm font-extrabold": tab() === "comments",
-              "text-white/50 hover:text-white/80": tab() !== "comments",
-            }}
-            onClick={() => setTab("comments")}
-          >
-            Comentarios
-          </button>
-          <button
-            class="px-3 py-1 text-[12px] font-bold tracking-wider uppercase transition-all duration-150 rounded-lg"
-            classList={{
-              "bg-white/20 text-white shadow-sm font-extrabold": tab() === "similar",
-              "text-white/50 hover:text-white/80": tab() !== "similar",
-            }}
-            onClick={() => setTab("similar")}
-          >
-            Similares
-          </button>
+      <div class="flex shrink-0 items-center justify-between gap-2 border-b border-white/10 px-4 py-3 bg-black/25">
+        <div class="flex shrink-0 items-center gap-1">
+          <Tab id="queue" active={tab()} onPick={setTab}>A continuación</Tab>
+          <Tab id="lyrics" active={tab()} onPick={setTab}>Letra</Tab>
+          <Tab id="comments" active={tab()} onPick={setTab}>Comentarios</Tab>
+          <Tab id="similar" active={tab()} onPick={setTab}>Similares</Tab>
         </div>
 
         <Show when={tab() === "lyrics"}>
-          <button
-            class="icon-btn size-7 opacity-70 hover:opacity-100 hover:bg-white/10"
-            onClick={() => setFullLyricsOpen(true)}
-            title="Pantalla completa"
-          >
-            <I.Maximize size={14} />
-          </button>
+          <div class="flex min-w-0 items-center gap-1.5">
+            <Show when={lyrics()?.source}>
+              {/* De donde sale la letra, y si viene sincronizada. Antes era un
+                  texto fijo que mentia cuando cambiara el proveedor. */}
+              <div
+                class="flex min-w-0 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-2 py-1 text-[10.5px] font-medium text-white/60"
+                title={lyrics()!.synced ? "Letra sincronizada" : "Letra sin sincronizar"}
+              >
+                <span
+                  class="size-1.5 shrink-0 rounded-full"
+                  classList={{
+                    "bg-[var(--accent)]": lyrics()!.synced,
+                    "bg-white/40": !lyrics()!.synced,
+                  }}
+                />
+                <span class="truncate">{lyrics()!.source}</span>
+              </div>
+            </Show>
+            <button
+              class="icon-btn size-7 shrink-0 opacity-70 hover:opacity-100 hover:bg-white/10"
+              onClick={() => setFullLyricsOpen(true)}
+              title="Pantalla completa"
+            >
+              <I.Maximize size={14} />
+            </button>
+          </div>
         </Show>
       </div>
 
@@ -83,6 +68,39 @@ export function SidePanel() {
         </div>
       </Show>
     </aside>
+  );
+}
+
+/**
+ * Duracion que se pinta en una fila de la cola.
+ *
+ * La pista trae la suya desde la busqueda; la actual, ademas, tiene la que midio
+ * el motor al resolverla, que es la buena. Cuando no hay ninguna se deja un
+ * guion: inventarse un numero es peor que admitir que aun no se sabe.
+ */
+function trackDuration(t: Track, isCurrent: boolean): string {
+  if (isCurrent && playback.durationMs) return fmtTime(playback.durationMs);
+  if (t.durationMs) return fmtTime(t.durationMs);
+  return "--:--";
+}
+
+function Tab(p: {
+  id: TabId;
+  active: TabId;
+  onPick: (id: TabId) => void;
+  children: string;
+}) {
+  return (
+    <button
+      class="shrink-0 rounded-lg px-2.5 py-1 text-[11px] font-bold uppercase transition-all duration-150"
+      classList={{
+        "bg-white/20 text-white shadow-sm": p.active === p.id,
+        "text-white/50 hover:text-white/80": p.active !== p.id,
+      }}
+      onClick={() => p.onPick(p.id)}
+    >
+      {p.children}
+    </button>
   );
 }
 
@@ -194,7 +212,7 @@ function QueueView() {
                   {/* Duración */}
                   <div class="flex items-center gap-2">
                     <span class="text-xs tabular-nums font-medium text-white/60">
-                      {isCurrent() && playback.durationMs ? fmtTime(playback.durationMs) : "3:21"}
+                      {trackDuration(t, isCurrent())}
                     </span>
                     <button
                       class="icon-btn size-7 text-white/40 group-hover:text-white/80 hover:!bg-white/10"

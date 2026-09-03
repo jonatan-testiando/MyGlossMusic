@@ -124,6 +124,9 @@ pub struct Track {
     pub title: String,
     pub author: String,
     pub thumbnail: Option<String>,
+    /// Duracion conocida de la pista, si la hay. La interfaz pinta un hueco
+    /// mientras sea `None` en vez de inventarse un numero.
+    pub duration_ms: Option<u64>,
 }
 
 impl From<&TrackInfo> for Track {
@@ -133,6 +136,7 @@ impl From<&TrackInfo> for Track {
             title: t.title.clone().unwrap_or_else(|| "Sin titulo".into()),
             author: t.author.clone().unwrap_or_else(|| "Desconocido".into()),
             thumbnail: t.thumbnail.clone(),
+            duration_ms: t.duration_ms,
         }
     }
 }
@@ -242,6 +246,7 @@ async fn prepare(
                     title,
                     author,
                     thumbnail,
+                    duration_ms,
                 });
                 return Ok(Prepared {
                     cache,
@@ -356,6 +361,7 @@ impl Inner {
                     title: None,
                     author: None,
                     thumbnail: None,
+                    duration_ms: None,
                 };
                 self.queue_rev += 1;
                 self.queue.set_items(vec![track], 0);

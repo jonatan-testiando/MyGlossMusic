@@ -43,6 +43,10 @@ async fn search(
     query: String,
     only_songs: bool,
 ) -> Result<Vec<SearchResult>, String> {
+    // `Filter::Songs` mira solo la pestania "Songs" del catalogo: deja fuera
+    // videos, subidas de usuario, directos y remixes sin catalogar. Es decir,
+    // buena parte de lo que la gente busca. Por eso el valor por defecto de la
+    // interfaz es `false` y esto solo se activa cuando se pide expresamente.
     let filter = if only_songs { Filter::Songs } else { Filter::All };
     state
         .innertube
@@ -63,6 +67,9 @@ struct TrackInput {
     title: Option<String>,
     author: Option<String>,
     thumbnail: Option<String>,
+    /// La busqueda ya sabe cuanto dura cada pista; mandarla evita que la cola
+    /// se pinte sin duraciones hasta que cada una se resuelva.
+    duration_ms: Option<u64>,
 }
 
 impl From<TrackInput> for TrackInfo {
@@ -72,6 +79,7 @@ impl From<TrackInput> for TrackInfo {
             title: t.title,
             author: t.author,
             thumbnail: t.thumbnail,
+            duration_ms: t.duration_ms,
         }
     }
 }
