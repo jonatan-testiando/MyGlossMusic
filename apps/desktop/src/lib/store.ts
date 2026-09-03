@@ -1,0 +1,114 @@
+import { createSignal, createEffect, on } from "solid-js";
+import { createStore } from "solid-js/store";
+import { api, type PlaybackState, type Palette, type SearchResult, thumbAt } from "./api";
+
+const EMPTY_STATE: PlaybackState = {
+  track: null,
+  playing: false,
+  loading: false,
+  positionMs: 0,
+  durationMs: 0,
+  volume: 1,
+  buffered: 0,
+  queue: [],
+  queueIndex: 0,
+  repeat: "off",
+  shuffle: false,
+  error: null,
+};
+
+const DEFAULT_PALETTE: Palette = {
+  background: "#12101a",
+  backgroundAlt: "#1c1826",
+  accent: "#8b7fd4",
+  foreground: "#f4f2fa",
+  isLight: false,
+};
+
+export const [playback, setPlayback] = createStore<PlaybackState>(EMPTY_STATE);
+export const [palette, setPalette] = createSignal<Palette>(DEFAULT_PALETTE);
+export const [results, setResults] = createSignal<SearchResult[]>([]);
+export const [searching, setSearching] = createSignal(false);
+export const [query, setQuery] = createSignal("");
+export const [view, setView] = createSignal<"home" | "search" | "diagnostics">("home");
+
+/**
+ * Posicion local interpolada.
+ *
+ * El backend publica cada 100 ms, que basta para no desincronizarse, pero una
+ * barra que solo se mueve 10 veces por segundo se ve a saltos. Interpolamos
+ * localmente entre publicaciones y resincronizamos con cada una.
+ */
+const [localPos, setLocalPos] = createSignal(0);
+export const position = localPos;
+
+let lastSync = { at: 0, ms: 0 };
+
+export function initStore() {
+  api.getState().then((s) => setPlayback(s));
+
+  api.onPlayback((s) => {
+    setPlayback(s);
+    lastSync = { at: performance.now(), ms: s.positionMs };
+    setLocalPos(s.positionMs);
+  });
+
+  const tick = () => {
+    if (playback.playing) {
+      setLocalPos(lastSync.ms + (performance.now() - lastSync.at));
+    }
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+
+  // La paleta se recalcula solo cuando cambia la portada, no en cada estado.
+  createEffect(
+    on(
+      () => playback.track?.thumbnail,
+      (thumb) => {
+        if (!thumb) {
+          setPalette(DEFAULT_PALETTE);
+          return;
+        }
+        api
+          .getPalette(thumb)
+          .then(setPalette)
+          .catch(() => setPalette(DEFAULT_PALETTE));
+      },
+    ),
+  );
+}
+
+export async function runSearch(q: string) {
+  if (!q.trim()) return;
+  setSearching(true);
+  setView("search");
+  try {
+    setResults(await api.search(q));
+  } catch (e) {
+    console.error("busqueda fallida", e);
+    setResults([]);
+  } finally {
+    setSearching(false);
+  }
+}
+
+/** Reproduce un resultado y encola el resto, que es lo que espera el usuario. */
+export function playFromResults(index: number) {
+  const list = results();
+  if (!list.length) return;
+  api.playQueue(
+    list.map((r) => ({
+      videoId: r.videoId,
+      title: r.title,
+      author: r.subtitle,
+      thumbnail: r.thumbnail,
+    })),
+    index,
+  );
+}
+
+/** Portada grande de la pista actual. */
+export function coverUrl(size = 544): string | null {
+  return thumbAt(playback.track?.thumbnail, size);
+}

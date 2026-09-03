@@ -38,6 +38,22 @@ async fn main() -> Result<()> {
             let id = video_id_arg(&args)?;
             probe(&id).await
         }
+        "search" => {
+            let q = args[1..].join(" ");
+            anyhow::ensure!(!q.is_empty(), "falta la consulta");
+            let it = InnerTube::new()?;
+            let hits = it.search(&q, ytm_source::Filter::Songs).await?;
+            println!("
+  {} resultados para: {q}
+", hits.len());
+            for (i, h) in hits.iter().take(10).enumerate() {
+                println!("  {:>2}. {}", i + 1, h.title);
+                println!("      {} [{}]  {}", h.subtitle,
+                    h.duration.as_deref().unwrap_or("?"), h.video_id);
+            }
+            println!();
+            Ok(())
+        }
         "engine" => {
             let id = video_id_arg(&args)?;
             engine::run(&id).await

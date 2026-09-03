@@ -7,11 +7,13 @@
 pub mod clients;
 pub mod innertube;
 pub mod model;
+pub mod search;
 pub mod select;
 
 pub use clients::ClientConfig;
 pub use innertube::InnerTube;
 pub use model::{Format, PlayerResponse};
+pub use search::{Filter, SearchResult};
 
 use anyhow::{bail, Result};
 

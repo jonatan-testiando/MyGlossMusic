@@ -29,6 +29,11 @@ impl InnerTube {
         Ok(Self { http })
     }
 
+    /// Cliente HTTP interno, para otros endpoints anonimos (busqueda).
+    pub(crate) fn http_ref(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     /// Pide la respuesta del reproductor para un video usando un cliente concreto.
     pub async fn player(&self, video_id: &str, client: ClientConfig) -> Result<PlayerResponse> {
         let mut context = json!({
