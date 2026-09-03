@@ -97,6 +97,40 @@ async fn main() -> Result<()> {
             println!();
             Ok(())
         }
+        // Lo mismo que `probe` es para reproducir, esto es para navegar: si el
+        // inicio o una pagina de artista se quedan en blanco, aqui se ve en 10
+        // segundos si YouTube cambio los renderers o si el fallo es nuestro.
+        "browse" => {
+            let id = args.get(1).map(String::as_str).unwrap_or(ytm_source::browse::HOME);
+            let it = InnerTube::new()?;
+            let page = it.browse(id, args.get(2).map(String::as_str)).await?;
+
+            println!();
+            if let Some(t) = &page.title {
+                println!("  {t}");
+                if let Some(sub) = &page.subtitle {
+                    println!("  {sub}");
+                }
+                println!();
+            }
+            if page.shelves.is_empty() {
+                println!("  SIN ESTANTERIAS. O el browseId no existe, o cambiaron los renderers.");
+            }
+            for shelf in &page.shelves {
+                println!("  {} ({} elementos)", shelf.title, shelf.items.len());
+                for item in shelf.items.iter().take(4) {
+                    println!(
+                        "      {:?} {:<18} {}  |  {}",
+                        item.kind, item.id, item.title, item.subtitle
+                    );
+                }
+                if shelf.items.len() > 4 {
+                    println!("      ... y {} mas", shelf.items.len() - 4);
+                }
+                println!();
+            }
+            Ok(())
+        }
         "radio" => {
             let id = video_id_arg(&args)?;
             let it = InnerTube::new()?;

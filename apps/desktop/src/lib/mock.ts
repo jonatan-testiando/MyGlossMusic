@@ -266,6 +266,7 @@ export const mockApi = {
 
   radio: async () => ({
     playlistId: "RDAMVMjig2aRZbHm4",
+    artistBrowseId: "UCartista123",
     tracks: TRACKS.slice(1).map((t) => ({
       videoId: t.videoId,
       title: t.title,

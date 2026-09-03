@@ -30,6 +30,14 @@ pub struct Radio {
     /// Identificador de la cola, por si hace falta pedir continuaciones.
     pub playlist_id: Option<String>,
     pub tracks: Vec<SearchResult>,
+    /// Canal del artista de la pista semilla.
+    ///
+    /// Sale del byline de la propia cola. La pestania "Relacionado" de YouTube
+    /// Music cuelga de un `browseId` con prefijo `MPTR` que SOLO responde
+    /// dentro del contexto de sesion de `next` — pedido suelto devuelve una
+    /// respuesta vacia de 2 KB, comprobado. Con el canal del artista se puede
+    /// ofrecer algo real en su lugar.
+    pub artist_browse_id: Option<String>,
 }
 
 /// Prefijo de las radios de YouTube Music.
@@ -116,7 +124,25 @@ pub fn parse_radio(root: &Value) -> Radio {
     }
 
     let playlist_id = crate::search::find_str(root, "playlistId").map(str::to_string);
-    Radio { playlist_id, tracks }
+    Radio { playlist_id, tracks, artist_browse_id: artist_of_seed(root) }
+}
+
+/// Canal del artista de la primera pista de la cola.
+///
+/// El byline trae el nombre del artista enlazado a su canal. Se filtra por el
+/// prefijo `UC` porque en esos mismos `runs` hay tambien enlaces a otras cosas.
+fn artist_of_seed(root: &Value) -> Option<String> {
+    let mut renderers = Vec::new();
+    collect_by_key(root, "playlistPanelVideoRenderer", &mut renderers);
+    let primera = renderers.first()?;
+
+    let mut endpoints = Vec::new();
+    collect_by_key(primera.get("longBylineText")?, "browseEndpoint", &mut endpoints);
+    endpoints
+        .iter()
+        .filter_map(|e| e.get("browseId").and_then(Value::as_str))
+        .find(|id| id.starts_with("UC"))
+        .map(str::to_string)
 }
 
 #[cfg(test)]
@@ -129,7 +155,10 @@ mod tests {
             "title": { "runs": [{ "text": titulo }] },
             "shortBylineText": { "runs": [{ "text": "Un Artista" }] },
             "longBylineText": { "runs": [
-                { "text": "Un Artista" }, { "text": " \u{2022} " },
+                { "text": "Un Artista", "navigationEndpoint": {
+                    "browseEndpoint": { "browseId": "UCartista123" }
+                }},
+                { "text": " \u{2022} " },
                 { "text": "3,7 M de visualizaciones" }
             ]},
             "lengthText": { "runs": [{ "text": "4:22" }] },
@@ -153,6 +182,23 @@ mod tests {
         assert_eq!(t.title, "Primera");
         assert_eq!(t.duration.as_deref(), Some("4:22"));
         assert_eq!(t.thumbnail.as_deref(), Some("https://ejemplo/grande.jpg"));
+    }
+
+    #[test]
+    fn saca_el_canal_del_artista_de_la_semilla() {
+        // Es el repuesto de la pestania "Relacionado": su `browseId` MPTR solo
+        // responde dentro del contexto de `next`, asi que se usa el canal.
+        let radio = parse_radio(&json!({ "x": [pista("aaaaaaaaaaa", "Semilla")] }));
+        assert_eq!(radio.artist_browse_id.as_deref(), Some("UCartista123"));
+    }
+
+    #[test]
+    fn sin_canal_en_el_byline_no_se_inventa_uno() {
+        let sin = json!({ "playlistPanelVideoRenderer": {
+            "videoId": "aaaaaaaaaaa",
+            "title": { "runs": [{ "text": "Suelta" }] }
+        }});
+        assert!(parse_radio(&sin).artist_browse_id.is_none());
     }
 
     #[test]

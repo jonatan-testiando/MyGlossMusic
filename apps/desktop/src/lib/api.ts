@@ -116,6 +116,8 @@ export interface SearchPage {
 export interface Radio {
   playlistId: string | null;
   tracks: SearchResult[];
+  /** Canal del artista de la pista semilla, si el byline lo trae. */
+  artistBrowseId: string | null;
 }
 
 export interface PlaylistResult {

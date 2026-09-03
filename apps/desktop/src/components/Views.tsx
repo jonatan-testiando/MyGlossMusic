@@ -509,7 +509,7 @@ export function HomeFeed() {
     // recomendaciones personalizadas de Google, que exigen cuenta.
     const semilla = h[0];
     if (semilla) {
-      seguro(() => api.radio(semilla.videoId), { playlistId: null, tracks: [] })
+      seguro(() => api.radio(semilla.videoId), { playlistId: null, tracks: [], artistBrowseId: null })
         .then((r) => {
           const items = r.tracks
             .filter((t) => t.videoId !== semilla.videoId)

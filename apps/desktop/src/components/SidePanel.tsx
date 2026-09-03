@@ -1,6 +1,14 @@
 import { For, Show, createEffect, createSignal, on } from "solid-js";
-import { api, fmtTime, thumbAt, type Track } from "../lib/api";
-import { playback, lyrics, lyricsLoading, position, setFullLyricsOpen } from "../lib/store";
+import { api, fmtTime, thumbAt, type BrowsePage, type Track } from "../lib/api";
+import {
+  playback,
+  lyrics,
+  lyricsLoading,
+  position,
+  setFullLyricsOpen,
+  relatedArtistId,
+  openBrowse,
+} from "../lib/store";
 import * as I from "./Icons";
 
 /** Panel derecho flotante de cristal escarchado idéntico a Image 2. */
@@ -63,9 +71,7 @@ export function SidePanel() {
         </div>
       </Show>
       <Show when={tab() === "similar"}>
-        <div class="flex flex-1 items-center justify-center p-8 text-center text-sm text-white/40">
-          Canciones y recomendaciones similares a esta pista.
-        </div>
+        <SimilarView />
       </Show>
     </aside>
   );
@@ -230,6 +236,108 @@ function QueueView() {
           </For>
         </Show>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Pestaña SIMILARES: la página del artista de lo que suena.
+ *
+ * No es la pestaña "Relacionado" de YouTube Music. Esa cuelga de un `browseId`
+ * con prefijo `MPTR` que solo responde dentro del contexto de sesión de `next`
+ * — pedido suelto devuelve una respuesta vacía de 2 KB, comprobado. Ofrecer la
+ * página del artista es real y útil; dejar la pestaña con un texto que promete
+ * algo que no llega, no.
+ */
+function SimilarView() {
+  const [pagina, setPagina] = createSignal<BrowsePage | null>(null);
+  const [cargando, setCargando] = createSignal(false);
+
+  createEffect(
+    on(relatedArtistId, async (id) => {
+      setPagina(null);
+      if (!id) return;
+      setCargando(true);
+      try {
+        setPagina(await api.browse(id));
+      } catch {
+        setPagina(null);
+      } finally {
+        setCargando(false);
+      }
+    }),
+  );
+
+  return (
+    <div class="scroll-area flex-1 overflow-y-auto px-4 py-3">
+      <Show when={cargando()}>
+        <p class="py-10 text-center text-sm text-white/40">Cargando…</p>
+      </Show>
+
+      <Show
+        when={!cargando() && pagina()}
+        fallback={
+          <Show when={!cargando()}>
+            <Empty>No hay nada relacionado para esta pista.</Empty>
+          </Show>
+        }
+      >
+        <div class="mb-3 px-1">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-white/45">
+            Más de
+          </div>
+          <button
+            class="truncate text-left text-[17px] font-bold leading-tight text-white hover:underline"
+            onClick={() => relatedArtistId() && openBrowse(relatedArtistId()!)}
+          >
+            {pagina()!.title ?? "este artista"}
+          </button>
+        </div>
+
+        <For each={pagina()!.shelves}>
+          {(estante) => (
+            <section class="mb-4">
+              <Show when={estante.title}>
+                <h3 class="mb-1.5 px-1 text-[11px] font-bold uppercase tracking-wider text-white/45">
+                  {estante.title}
+                </h3>
+              </Show>
+              <For each={estante.items.slice(0, 6)}>
+                {(item) => (
+                  <button
+                    class="group flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/[0.07]"
+                    onClick={() =>
+                      item.kind === "track" ? api.playNow(item.id) : openBrowse(item.id)
+                    }
+                  >
+                    <Show
+                      when={item.thumbnail}
+                      fallback={<div class="size-10 shrink-0 rounded-lg bg-white/10" />}
+                    >
+                      <img
+                        src={thumbAt(item.thumbnail, 80)!}
+                        alt=""
+                        class="size-10 shrink-0 object-cover ring-1 ring-white/10"
+                        classList={{
+                          "rounded-full": item.kind === "artist",
+                          "rounded-lg": item.kind !== "artist",
+                        }}
+                      />
+                    </Show>
+                    <div class="min-w-0 flex-1">
+                      <div class="truncate text-[13px] font-semibold text-white">{item.title}</div>
+                      <div class="truncate text-[11.5px] text-white/55">{item.subtitle}</div>
+                    </div>
+                    <span class="shrink-0 text-[11.5px] tabular-nums text-white/45">
+                      {item.duration ?? ""}
+                    </span>
+                  </button>
+                )}
+              </For>
+            </section>
+          )}
+        </For>
+      </Show>
     </div>
   );
 }

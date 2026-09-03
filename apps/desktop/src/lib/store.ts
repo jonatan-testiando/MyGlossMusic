@@ -77,6 +77,17 @@ export const [browsePage, setBrowsePage] = createSignal<BrowsePage | null>(null)
 export const [browseLoading, setBrowseLoading] = createSignal(false);
 
 /**
+ * Canal del artista de lo que suena, para la pestaña SIMILARES.
+ *
+ * Lo deja la radio al cargarse. La pestaña "Relacionado" de YouTube Music cuelga
+ * de un `browseId` con prefijo `MPTR` que solo responde dentro del contexto de
+ * sesión de `next`: pedido suelto devuelve una respuesta vacía de 2 KB,
+ * comprobado. Así que se ofrece la página del artista, que es real y útil, en
+ * vez de una pestaña que no hace nada.
+ */
+export const [relatedArtistId, setRelatedArtistId] = createSignal<string | null>(null);
+
+/**
  * Historial de navegación.
  *
  * Hace falta de verdad desde que hay páginas de artista y de álbum: sin él,
@@ -327,6 +338,7 @@ export async function runSearch(q: string) {
     api
       .radio(c.value)
       .then((r) => {
+        setRelatedArtistId(r.artistBrowseId);
         const resto = r.tracks.filter((t) => t.videoId !== c.value);
         if (resto.length) api.setUpNext(resto.map(toTrack));
       })
@@ -394,8 +406,10 @@ function toTrack(r: SearchResult) {
  */
 export async function playWithRadio(track: SearchResult) {
   api.playQueue([toTrack(track)], 0);
+  setRelatedArtistId(null);
   try {
     const r = await api.radio(track.videoId);
+    setRelatedArtistId(r.artistBrowseId);
     // La semilla suele venir la primera en su propia radio.
     const resto = r.tracks.filter((t) => t.videoId !== track.videoId);
     if (resto.length) api.setUpNext(resto.map(toTrack));
