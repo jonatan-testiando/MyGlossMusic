@@ -10,6 +10,7 @@
 //!   ytm-spike play  <videoId> [--client <id>] [--keep]
 
 mod bench;
+mod engine;
 
 use anyhow::{bail, Context, Result};
 use std::io::Write as _;
@@ -36,6 +37,10 @@ async fn main() -> Result<()> {
         "probe" => {
             let id = video_id_arg(&args)?;
             probe(&id).await
+        }
+        "engine" => {
+            let id = video_id_arg(&args)?;
+            engine::run(&id).await
         }
         "bench" => {
             let id = video_id_arg(&args)?;

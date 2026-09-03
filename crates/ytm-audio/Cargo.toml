@@ -1,19 +1,15 @@
 [package]
-name = "ytm-spike"
+name = "ytm-audio"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
 ytm-source = { path = "../ytm-source" }
-ytm-audio = { path = "../ytm-audio" }
 anyhow.workspace = true
 tokio.workspace = true
 reqwest.workspace = true
-serde_json.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
-
-# Solo `playback` + `mp4` (isomp4 + aac). Nada mas: es todo lo que necesita
-# el itag 140, y cada codec que no compilamos es binario que no cargamos.
+serde.workspace = true
+dirs = "6"
 rodio = { version = "0.22", default-features = false, features = ["playback", "mp4"] }

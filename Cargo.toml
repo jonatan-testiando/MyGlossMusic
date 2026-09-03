@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/ytm-source", "crates/ytm-spike"]
+members = ["crates/ytm-source", "crates/ytm-audio", "crates/ytm-spike"]
 
 [workspace.package]
 version = "0.1.0"
