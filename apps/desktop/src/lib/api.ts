@@ -189,13 +189,20 @@ export function thumbFallback(url: string): string | null {
   return base ? `${base}mqdefault.jpg` : null;
 }
 
-export function thumbAt(
+/**
+ * Reescribe la URL de una miniatura al tamanio pedido, SIN pasarla por la
+ * cache de Rust.
+ *
+ * Hace falta suelto porque `get_palette` descarga la imagen desde Rust: si le
+ * llegara la URL del proxy, pediria `thumb://` a googleusercontent.
+ */
+export function thumbUrl(
   url: string | null | undefined,
   width: number,
   height = width,
 ): string | null {
   if (!url) return null;
-  const resized = url
+  return url
     .replace(/=w\d+-h\d+/, `=w${width}-h${height}`)
     .replace(/\/w\d+-h\d+/, `/w${width}-h${height}`)
     // `maxresdefault` no existe para todo; el `onError` de la portada cae a
@@ -203,6 +210,15 @@ export function thumbAt(
     .replace(YTIMG_VARIANT, (_m, base) =>
       `${base}${width >= 480 ? "maxresdefault" : "mqdefault"}.jpg`,
     );
+}
+
+export function thumbAt(
+  url: string | null | undefined,
+  width: number,
+  height = width,
+): string | null {
+  const resized = thumbUrl(url, width, height);
+  if (!resized) return null;
   if (!inTauri) return resized;
   // Dentro de la app las imagenes las sirve Rust con cache en disco
   // (`thumbs.rs`): googleusercontent responde 429 a las rafagas de 20

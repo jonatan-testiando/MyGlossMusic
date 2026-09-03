@@ -13,6 +13,33 @@
 
 use serde::Serialize;
 
+/// Croma por debajo del cual un color es neutro a efectos practicos.
+///
+/// No es cero, y el margen importa. Medido sobre colores reales:
+///
+/// | color                        | croma |
+/// |------------------------------|-------|
+/// | blanco puro, gris medio      | 0,000 |
+/// | blanco con matiz calido       | 0,019 |
+/// | turquesa palido               | 0,023 |
+/// | azul oscuro de verdad         | 0,033 |
+/// | turquesa de verdad            | 0,051 |
+/// | magenta                       | 0,169 |
+///
+/// El corte va en 0,028: por debajo son blancos y grises, por encima colores.
+/// Empujar un blanco de 0,019 hasta 0,19 lo convertia en `#f0a36c`, un naranja
+/// fuerte que NO esta en la portada, y la ventana salia rosa cuando la imagen
+/// era turquesa.
+const NEUTRAL: f32 = 0.028;
+
+/// Cuanto peso conserva en la malla una zona sin color.
+///
+/// No es cero: un vestido blanco o un cielo palido son parte de la portada y
+/// hacen falta para que la malla cubra la ventana. Pero no son "el color de
+/// esta cancion", asi que no pueden mandar en la mezcla — y ocupan mucha
+/// superficie, asi que por numero de pixeles mandarian.
+const PESO_NEUTRO: f32 = 0.25;
+
 /// Un color de la portada listo para pintar como luz ambiental.
 ///
 /// La interfaz pinta un degradado radial por cada parada; el peso decide cual
@@ -180,14 +207,14 @@ fn fit_gamut(c: Oklab) -> Oklab {
 /// redondeo: amplificarlo pintaria la ventana de un color inventado.
 fn saturate(c: Oklab) -> Oklab {
     let chroma = c.chroma();
-    if chroma < 0.012 {
+    if chroma < NEUTRAL {
         return c;
     }
-    Oklab {
-        l: c.l,
-        a: c.a * (0.19 / chroma).clamp(0.9, 6.0),
-        b: c.b * (0.19 / chroma).clamp(0.9, 6.0),
-    }
+    // El tope aviva un color apagado, pero no lo convierte en otro. Con 6x, un
+    // gris con la mas leve desviacion salia como color saturado y la ventana se
+    // teñia de algo que no estaba en la portada.
+    let boost = (0.19 / chroma).clamp(0.9, 3.5);
+    Oklab { l: c.l, a: c.a * boost, b: c.b * boost }
 }
 
 fn hex(c: Oklab) -> String {
@@ -237,13 +264,52 @@ pub fn from_pixels(pixels: &[(u8, u8, u8)]) -> Palette {
     // color chillon tinaria toda la ventana.
     let mut ranked: Vec<&Cluster> = clusters.iter().filter(|c| c.count * 50 > total).collect();
     ranked.sort_by(|a, b| b.count.cmp(&a.count));
-    let stops: Vec<Stop> = ranked
+
+    // La malla pinta los COLORES de la portada, no su promedio. Las zonas sin
+    // color se quedan — hacen falta para cubrir la ventana — pero con una
+    // cuarta parte del peso, para que no manden solo por ocupar superficie.
+    let peso = |c: &Cluster| {
+        let base = c.count as f32;
+        if c.center.chroma() >= NEUTRAL { base } else { base * PESO_NEUTRO }
+    };
+
+    // Los pesos se renormalizan sobre el total ya corregido: si no, restarle
+    // peso a lo gris dejaria una malla que no llega a cubrir la ventana.
+    let cubierto: f32 = ranked.iter().copied().map(peso).sum();
+    let mut stops: Vec<Stop> = ranked
         .iter()
+        .copied()
         .map(|c| Stop {
             color: hex(ambient(c.center)),
-            weight: c.count as f32 / total as f32,
+            weight: peso(c) / cubierto.max(f32::EPSILON),
         })
         .collect();
+    stops.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap_or(std::cmp::Ordering::Equal));
+
+    // El fondo y el acento salen del grupo con color de mas peso, no del que
+    // mas pixeles tiene: ese puede ser justo la parte sin color.
+    let cromatico_mayor = ranked
+        .iter()
+        .copied()
+        .filter(|c| c.center.chroma() >= NEUTRAL)
+        .max_by_key(|c| c.count)
+        .map(|c| c.center);
+    let dominant = cromatico_mayor.unwrap_or(dominant);
+    let accent = cromatico_mayor
+        .map(|_| {
+            ranked
+                .iter()
+                .copied()
+                .max_by(|a, b| {
+                    a.center
+                        .chroma()
+                        .partial_cmp(&b.center.chroma())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|c| c.center)
+                .unwrap_or(accent)
+        })
+        .unwrap_or(accent);
 
     build(stops, dominant, accent)
 }
@@ -442,23 +508,21 @@ mod tests {
 
     #[test]
     fn una_portada_apagada_sigue_dando_color() {
-        // El caso que dejaba la ventana gris: una portada de tonos lavados. Los
-        // centros del k-means salen con croma bajisimo y hay que empujarlos.
+        // Un turquesa apagado como el de una portada real (croma ~0,05): tiene
+        // color de verdad, solo poco. Es lo que hay que avivar.
+        //
+        // Este test pedia antes lo mismo de un gris pizarra (croma 0,02), y esa
+        // expectativa ERA el fallo: cumplirla obligaba a un empuje que
+        // convertia los blancos calidos en naranjas inventados.
         let pixels: Vec<_> = (0..400)
-            .map(|i| (96u8 + (i % 8) as u8, 104u8, 118u8))
+            .map(|i| (58u8, 112u8 + (i % 6) as u8, 128u8))
             .collect();
         let p = from_pixels(&pixels);
 
         for parada in &p.stops {
-            let (r, g, b) = (
-                u8::from_str_radix(&parada.color[1..3], 16).unwrap() as i32,
-                u8::from_str_radix(&parada.color[3..5], 16).unwrap() as i32,
-                u8::from_str_radix(&parada.color[5..7], 16).unwrap() as i32,
-            );
-            let amplitud = [r, g, b].iter().max().unwrap() - [r, g, b].iter().min().unwrap();
             assert!(
-                amplitud > 30,
-                "parada casi gris: {} (amplitud {amplitud})",
+                amplitud(&parada.color) > 45,
+                "un turquesa de verdad salio apagado: {}",
                 parada.color
             );
         }
@@ -499,6 +563,84 @@ mod tests {
             "el tono se movio: {} -> {}",
             tono(&imposible),
             tono(&ajustado)
+        );
+    }
+
+    /// Amplitud entre canales: sirve de medida barata de "cuanto color tiene".
+    fn amplitud(hex: &str) -> i32 {
+        let c: Vec<i32> = (1..7)
+            .step_by(2)
+            .map(|i| i32::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+        c.iter().max().unwrap() - c.iter().min().unwrap()
+    }
+
+    #[test]
+    fn las_barras_negras_no_tinen_la_ventana_de_gris() {
+        // Caso real: `hqdefault.jpg` es 4:3 con barras negras incrustadas, y en
+        // la portada medida el negro era el 23% de los pixeles — el grupo mas
+        // grande. Sin filtrar, el foco principal salia gris (#686969) y tapaba
+        // el turquesa que si estaba en la imagen.
+        let mut pixels: Vec<(u8, u8, u8)> = (0..500).map(|_| (0u8, 0u8, 0u8)).collect();
+        pixels.extend((0..900).map(|i| (60u8, 120u8 + (i % 20) as u8, 135u8)));
+        pixels.extend((0..600).map(|i| (40u8, 70u8, 90u8 + (i % 15) as u8)));
+
+        let p = from_pixels(&pixels);
+        let principal = &p.stops[0];
+        assert!(
+            amplitud(&principal.color) > 25,
+            "el foco principal salio gris: {}",
+            principal.color
+        );
+
+        // Y el gris, en conjunto, no puede llevarse la mayoria de la mezcla.
+        let peso_gris: f32 = p
+            .stops
+            .iter()
+            .filter(|s| amplitud(&s.color) <= 25)
+            .map(|s| s.weight)
+            .sum();
+        assert!(peso_gris < 0.35, "el gris manda en la malla: {peso_gris}");
+    }
+
+    #[test]
+    fn un_blanco_calido_no_se_convierte_en_naranja() {
+        // El otro caso real: el vestido y las nubes son blanco con matiz calido
+        // (croma 0,019). Empujandolo salia #f0a36c, un naranja que no existe en
+        // la portada. Tiene que quedarse cerca del blanco.
+        let mut pixels: Vec<(u8, u8, u8)> = (0..900).map(|i| (247u8, 234u8, 225u8 - (i % 6) as u8)).collect();
+        // Un turquesa minoritario, para que haya dos grupos y el filtro actue.
+        pixels.extend((0..300).map(|_| (60u8, 130u8, 140u8)));
+
+        let p = from_pixels(&pixels);
+        let blanco = p
+            .stops
+            .iter()
+            .find(|s| {
+                let r = i32::from_str_radix(&s.color[1..3], 16).unwrap();
+                r > 180
+            })
+            .expect("el blanco calido deberia seguir estando en la malla");
+        assert!(
+            amplitud(&blanco.color) < 45,
+            "el blanco se volvio color: {}",
+            blanco.color
+        );
+    }
+
+    #[test]
+    fn los_pesos_cubren_la_ventana_tras_descartar_lo_gris() {
+        // Descartar el 40% de la portada sin renormalizar dejaria una malla que
+        // no llega a cubrir la ventana.
+        let mut pixels: Vec<(u8, u8, u8)> = (0..600).map(|_| (250u8, 250u8, 250u8)).collect();
+        pixels.extend((0..500).map(|i| (30u8, 110u8 + (i % 10) as u8, 160u8)));
+        pixels.extend((0..400).map(|i| (170u8, 40u8, 90u8 + (i % 12) as u8)));
+
+        let p = from_pixels(&pixels);
+        let suma: f32 = p.stops.iter().map(|s| s.weight).sum();
+        assert!(
+            (suma - 1.0).abs() < 0.02,
+            "los pesos no cubren la ventana: {suma}"
         );
     }
 

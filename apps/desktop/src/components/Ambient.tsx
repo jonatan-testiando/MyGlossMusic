@@ -37,7 +37,15 @@ export function Ambient() {
   // Siempre se pintan los cinco focos, aunque la portada de menos colores: si
   // el numero de nodos cambiara con la cancion, los que sobran desaparecerian de
   // golpe en vez de apagarse.
-  const slots = () => SPOTS.map((spot, i) => ({ spot, stop: palette().stops[i] }));
+  const slots = () =>
+    SPOTS.map((spot, i) => ({
+      spot,
+      stop: palette().stops[i],
+      // El color del foco siguiente. La capa interior lo cruza con el propio,
+      // asi que la mezcla se mueve de tono y no solo de brillo. Con una sola
+      // parada se cruza consigo misma y no pasa nada, que es lo correcto.
+      next: palette().stops[(i + 1) % Math.max(palette().stops.length, 1)],
+    }));
 
   return (
     <div class="ambient" aria-hidden="true">
@@ -47,12 +55,15 @@ export function Ambient() {
             class="ambient-spot"
             style={{
               "--c": slot().stop?.color ?? palette().background,
+              "--c2": slot().next?.color ?? slot().stop?.color ?? palette().background,
               "--w": String(slot().stop?.weight ?? 0),
               "--x": `${slot().spot.x}%`,
               "--y": `${slot().spot.y}%`,
               "--size": `${slot().spot.size}%`,
             }}
-          />
+          >
+            <div class="ambient-spot-alt" />
+          </div>
         )}
       </Index>
     </div>

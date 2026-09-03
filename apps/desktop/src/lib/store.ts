@@ -1,6 +1,6 @@
 import { createSignal, createEffect, on } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { api, parseDuration, thumbAt, thumbFallback, type PlaybackState, type Palette, type SearchResult, type Lyrics } from "./api";
+import { api, parseDuration, thumbAt, thumbUrl, thumbFallback, type PlaybackState, type Palette, type SearchResult, type Lyrics } from "./api";
 
 const EMPTY_STATE: PlaybackState = {
   track: null,
@@ -139,8 +139,11 @@ export function initStore() {
           setPalette(DEFAULT_PALETTE);
           return;
         }
+        // Limpia y grande, no la que venga. `hqdefault.jpg` es 4:3 con las
+        // barras negras incrustadas: medido sobre una portada real, ese negro
+        // era el 23% de los pixeles y se llevaba el foco principal de la malla.
         api
-          .getPalette(thumb)
+          .getPalette(thumbUrl(thumb, 640, 360) ?? thumb)
           .then(setPalette)
           .catch(() => setPalette(DEFAULT_PALETTE));
       },

@@ -134,6 +134,57 @@ body {
   will-change: transform;
 }
 
+/*
+ * Capa del color siguiente.
+ *
+ * Va dentro del foco, asi que la comparte la mascara y el modo de mezcla del
+ * padre. Su opacidad oscila, y al cruzarse con el color propio del foco, la
+ * mezcla se mueve de TONO — no solo de brillo, que es lo unico que conseguia la
+ * respiracion sola. El resultado se parece a lo que hace la referencia
+ * muestreando fotogramas de video, sin necesitar video.
+ *
+ * El color va aqui y no en unos fotogramas del padre a proposito: asi el padre
+ * conserva su `transition: background-color`, y el cambio de cancion sigue
+ * fundiendo de una paleta a otra en vez de cortar.
+ */
+.ambient-spot-alt {
+  position: absolute;
+  inset: 0;
+  background-color: var(--c2);
+  opacity: 0;
+  transition: background-color 900ms var(--ease);
+  animation: ambient-crossfade 53s ease-in-out infinite alternate;
+  will-change: opacity;
+}
+
+@keyframes ambient-crossfade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 0.85;
+  }
+}
+
+/* Periodos distintos del de la deriva y entre si: con dos ciclos por foco que
+   no encajan, la ventana no vuelve a pasar dos veces por el mismo color. */
+.ambient-spot:nth-child(2) .ambient-spot-alt {
+  animation-duration: 67s;
+  animation-delay: -14s;
+}
+.ambient-spot:nth-child(3) .ambient-spot-alt {
+  animation-duration: 41s;
+  animation-delay: -31s;
+}
+.ambient-spot:nth-child(4) .ambient-spot-alt {
+  animation-duration: 59s;
+  animation-delay: -22s;
+}
+.ambient-spot:nth-child(5) .ambient-spot-alt {
+  animation-duration: 47s;
+  animation-delay: -8s;
+}
+
 /* Duraciones sin multiplos comunes para que los focos no vuelvan a alinearse:
    si coincidieran, la deriva se leeria como un latido. */
 .ambient-spot:nth-child(2) {
@@ -431,8 +482,9 @@ body {
   }
 
   /* La deriva del fondo es `infinite alternate`: acortarle la duracion no la
-     para, la convierte en un parpadeo. Se apaga entera. */
-  .ambient-spot {
+     para, la convierte en un parpadeo. Se apagan enteras. */
+  .ambient-spot,
+  .ambient-spot-alt {
     animation: none !important;
     transform: none;
   }
