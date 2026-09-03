@@ -58,6 +58,29 @@ async fn main() -> Result<()> {
             let id = video_id_arg(&args)?;
             engine::run(&id).await
         }
+        "rawurl" => {
+            let path = args.get(1).ok_or_else(|| anyhow::anyhow!("falta el archivo"))?;
+            let url = std::fs::read_to_string(path)?;
+            bench::raw_url(url.trim()).await
+        }
+        "attestdetail" => {
+            let id = video_id_arg(&args)?;
+            let vd = std::env::var("YTM_VISITOR_DATA")?;
+            let pot = std::env::var("YTM_POTOKEN")?;
+            bench::attest_detail(&id, &vd, &pot).await
+        }
+        "attest" => {
+            let id = video_id_arg(&args)?;
+            let vd = std::env::var("YTM_VISITOR_DATA")
+                .map_err(|_| anyhow::anyhow!("falta YTM_VISITOR_DATA"))?;
+            let pot = std::env::var("YTM_POTOKEN")
+                .map_err(|_| anyhow::anyhow!("falta YTM_POTOKEN"))?;
+            bench::attest(&id, &vd, &pot).await
+        }
+        "clientlimits" => {
+            let id = video_id_arg(&args)?;
+            bench::client_limits(&id).await
+        }
         "limits" => {
             let ids: Vec<String> = args[1..].iter().map(|a| parse_video_id(a)).collect();
             anyhow::ensure!(!ids.is_empty(), "faltan videoIds");

@@ -11,7 +11,7 @@ pub mod search;
 pub mod select;
 
 pub use clients::ClientConfig;
-pub use innertube::InnerTube;
+pub use innertube::{Attestation, InnerTube};
 pub use model::{Format, PlayerResponse};
 pub use search::{Filter, SearchResult};
 

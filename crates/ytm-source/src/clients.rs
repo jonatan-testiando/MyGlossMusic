@@ -81,7 +81,7 @@ pub const TV_EMBEDDED: ClientConfig = ClientConfig {
 pub const WEB_REMIX: ClientConfig = ClientConfig {
     id: "web_remix",
     client_name: "WEB_REMIX",
-    client_version: "1.20250310.01.00",
+    client_version: "1.20260901.12.00",
     client_name_id: 67,
     user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
                  (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
@@ -101,12 +101,61 @@ pub const MWEB: ClientConfig = ClientConfig {
     expects_direct_urls: false,
 };
 
+/// Cliente de la app de YouTube Music para iOS. Es el cliente "nativo" para
+/// contenido musical con licencia, que es justo lo que reproduce esta app.
+pub const IOS_MUSIC: ClientConfig = ClientConfig {
+    id: "ios_music",
+    client_name: "IOS_MUSIC",
+    client_version: "7.31.2",
+    client_name_id: 26,
+    user_agent: "com.google.ios.youtubemusic/7.31.2 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+    embedded: false,
+    expects_direct_urls: true,
+};
+
+/// Cliente de la app de YouTube Music para Android.
+pub const ANDROID_MUSIC: ClientConfig = ClientConfig {
+    id: "android_music",
+    client_name: "ANDROID_MUSIC",
+    client_version: "7.31.50",
+    client_name_id: 21,
+    user_agent: "com.google.android.apps.youtube.music/7.31.50 (Linux; U; Android 14; GB) gzip",
+    embedded: false,
+    expects_direct_urls: true,
+};
+
+/// Cliente de la app de YouTube para Android.
+pub const ANDROID: ClientConfig = ClientConfig {
+    id: "android",
+    client_name: "ANDROID",
+    client_version: "20.10.38",
+    client_name_id: 3,
+    user_agent: "com.google.android.youtube/20.10.38 (Linux; U; Android 14; GB) gzip",
+    embedded: false,
+    expects_direct_urls: true,
+};
+
+/// Cliente de televisores con sesion de invitado. Otra variante del arbol TV.
+pub const TV_SIMPLY: ClientConfig = ClientConfig {
+    id: "tv_simply",
+    client_name: "TVHTML5_SIMPLY",
+    client_version: "1.0",
+    client_name_id: 75,
+    user_agent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
+    embedded: false,
+    expects_direct_urls: false,
+};
+
 /// Orden de preferencia para reproducir. El primero que devuelva un stream
 /// usable, gana. Reordena esta lista segun lo que diga `probe`.
-pub const PREFERRED: &[ClientConfig] = &[IOS, ANDROID_VR, TV_EMBEDDED, TV, MWEB, WEB_REMIX];
+pub const PREFERRED: &[ClientConfig] =
+    &[IOS_MUSIC, ANDROID_MUSIC, IOS, ANDROID_VR, ANDROID, TV_EMBEDDED, TV, MWEB, WEB_REMIX];
 
 /// Todos los clientes conocidos, para el modo `probe`.
-pub const ALL: &[ClientConfig] = &[IOS, ANDROID_VR, TV, TV_EMBEDDED, MWEB, WEB_REMIX];
+pub const ALL: &[ClientConfig] = &[
+    IOS_MUSIC, ANDROID_MUSIC, IOS, ANDROID_VR, ANDROID, TV, TV_EMBEDDED, TV_SIMPLY, MWEB,
+    WEB_REMIX,
+];
 
 /// Busca un cliente por su `id` corto.
 pub fn by_id(id: &str) -> Option<ClientConfig> {

@@ -30,6 +30,247 @@ const CHUNK: u64 = 1_048_576; // 1 MiB
 ///
 /// Sirve para distinguir contenido que se descarga entero de contenido que
 /// corta a los ~65 s (1 MiB en itag 140).
+/// Mide, POR CLIENTE, cuanto audio se puede descargar antes del primer 403.
+///
+/// Es la prueba que decide si hace falta poToken: si algun cliente entrega la
+/// pista entera, no hace falta tocar BotGuard.
+/// Prueba si una atestacion de sesion (visitorData + poToken) desbloquea la
+/// descarga completa.
+///
+/// Es la prueba que decide toda la arquitectura: si funciona, hace falta acunar
+/// el token en un webview oculto; si no, no hay camino sin reimplementar
+/// BotGuard entero.
+/// Descarga entera una URL de googlevideo YA FORMADA (por ejemplo, capturada de
+/// un navegador real). Sirve para comprobar si una URL con `pot` y firma valida
+/// se puede consumir desde un cliente HTTP normal.
+/// Detalle crudo de lo que devuelve cada cliente con atestacion.
+///
+/// Decide la arquitectura: si algun cliente devuelve URLs DIRECTAS (sin
+/// `signatureCipher`) al mandarle el poToken, basta acunar el token una vez por
+/// sesion. Si todas vienen cifradas, hace falta descifrar la firma, que solo se
+/// puede hacer ejecutando el JavaScript del reproductor.
+pub async fn attest_detail(video_id: &str, visitor_data: &str, po_token: &str) -> Result<()> {
+    let it = InnerTube::new()?;
+    let att = ytm_source::Attestation {
+        visitor_data: visitor_data.to_string(),
+        po_token: po_token.to_string(),
+    };
+
+    println!("
+  Detalle con atestacion - {video_id}
+");
+    for cfg in ytm_source::clients::ALL {
+        let res = match it.player_with(video_id, *cfg, Some(&att)).await {
+            Ok(r) => r,
+            Err(e) => {
+                println!("  {:<15} error: {}", cfg.id, e.to_string().chars().take(50).collect::<String>());
+                continue;
+            }
+        };
+        let status = res
+            .playability_status
+            .as_ref()
+            .and_then(|p| p.status.clone())
+            .unwrap_or_else(|| "?".into());
+        let formats = res.streaming_data.map(|s| s.adaptive_formats).unwrap_or_default();
+        let audio: Vec<_> = formats.iter().filter(|f| f.is_audio()).collect();
+        let directas = audio.iter().filter(|f| f.url.is_some()).count();
+        let cifradas = audio.iter().filter(|f| f.signature_cipher.is_some()).count();
+        let con_pot = audio
+            .iter()
+            .filter(|f| f.url.as_deref().is_some_and(|u| u.contains("pot=")))
+            .count();
+
+        println!(
+            "  {:<15} {:<16} audio={:<3} directas={:<3} cifradas={:<3} con_pot={}",
+            cfg.id, status, audio.len(), directas, cifradas, con_pot
+        );
+    }
+    println!();
+    Ok(())
+}
+
+pub async fn raw_url(url: &str) -> Result<()> {
+    let client = reqwest::Client::new();
+    let expected: u64 = url
+        .split("clen=")
+        .nth(1)
+        .and_then(|s| s.split('&').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+
+    println!("
+  Descargando URL formada por el navegador");
+    println!("  esperado: {} KB
+", expected / 1024);
+
+    let mut got = 0u64;
+    let mut rn = 0u64;
+    let t = Instant::now();
+    loop {
+        // Se usa el parametro de query, que es lo que hace el reproductor real,
+        // con `rn` incremental.
+        let res = client
+            .get(format!("{url}&range={got}-{}&rn={rn}&rbuf=0", got + CHUNK - 1))
+            .send()
+            .await?;
+        rn += 1;
+        let status = res.status();
+        let bytes = res.bytes().await?;
+        if !status.is_success() {
+            println!("  HTTP {} en offset {got}", status.as_u16());
+            break;
+        }
+        if bytes.is_empty() {
+            break;
+        }
+        got += bytes.len() as u64;
+        println!("  +{} KB  (total {} KB)", bytes.len() / 1024, got / 1024);
+        if expected > 0 && got >= expected {
+            break;
+        }
+        if (bytes.len() as u64) < CHUNK {
+            break;
+        }
+    }
+
+    let secs = t.elapsed().as_secs_f64();
+    println!(
+        "
+  {} KB en {:.1}s ({:.2} MB/s) - {}
+",
+        got / 1024,
+        secs,
+        got as f64 / 1_048_576.0 / secs,
+        if expected > 0 && got >= expected { "COMPLETO" } else { "CORTADO" }
+    );
+    Ok(())
+}
+
+pub async fn attest(video_id: &str, visitor_data: &str, po_token: &str) -> Result<()> {
+    let it = InnerTube::new()?;
+    let client = reqwest::Client::new();
+    let att = ytm_source::Attestation {
+        visitor_data: visitor_data.to_string(),
+        po_token: po_token.to_string(),
+    };
+
+    println!("
+  Con atestacion de sesion - {video_id}
+");
+    println!("  {:<15} {:>7} {:>9} {:>9} {:>5}  {}", "CLIENTE", "TROZOS", "KB", "ESPERADO", "POT", "VEREDICTO");
+    println!("  {}", "-".repeat(78));
+
+    for cfg in ytm_source::clients::ALL {
+        let Ok(res) = it.player_with(video_id, *cfg, Some(&att)).await else {
+            continue;
+        };
+        let Some(streaming) = res.streaming_data else { continue };
+        let Some(fmt) = ytm_source::select::best_audio(&streaming.adaptive_formats) else {
+            continue;
+        };
+        let Some(url) = fmt.url.clone() else { continue };
+        let expected = fmt.content_length_bytes().unwrap_or(0);
+        // Si YouTube acepto la atestacion, devuelve la URL ya con `pot`.
+        let has_pot = url.contains("&pot=") || url.contains("?pot=");
+
+        let mut got = 0u64;
+        let mut chunks = 0;
+        loop {
+            let r = client
+                .get(&url)
+                .header("Range", format!("bytes={got}-{}", got + CHUNK - 1))
+                .header("User-Agent", cfg.user_agent)
+                .send()
+                .await;
+            match r {
+                Ok(resp) if resp.status().is_success() => {
+                    let n = resp.bytes().await.map(|b| b.len() as u64).unwrap_or(0);
+                    if n == 0 { break; }
+                    got += n;
+                    chunks += 1;
+                    if n < CHUNK || (expected > 0 && got >= expected) { break; }
+                }
+                _ => break,
+            }
+        }
+
+        let ok = expected > 0 && got >= expected;
+        println!(
+            "  {:<15} {chunks:>7} {:>9} {:>9} {:>5}  {}",
+            cfg.id,
+            got / 1024,
+            expected / 1024,
+            if has_pot { "si" } else { "no" },
+            if ok { "COMPLETO" } else { "CORTADO" }
+        );
+    }
+    println!();
+    Ok(())
+}
+
+pub async fn client_limits(video_id: &str) -> Result<()> {
+    let it = InnerTube::new()?;
+    let client = reqwest::Client::new();
+
+    println!("
+  Limite de descarga por cliente - {video_id}
+");
+    println!("  {:<15} {:>7} {:>9} {:>9}  {}", "CLIENTE", "TROZOS", "KB", "ESPERADO", "VEREDICTO");
+    println!("  {}", "-".repeat(72));
+
+    for cfg in ytm_source::clients::ALL {
+        let res = match it.player(video_id, *cfg).await {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let Some(streaming) = res.streaming_data else { continue };
+        let Some(fmt) = ytm_source::select::best_audio(&streaming.adaptive_formats) else {
+            continue;
+        };
+        let Some(url) = fmt.url.clone() else { continue };
+        let expected = fmt.content_length_bytes().unwrap_or(0);
+
+        let mut got = 0u64;
+        let mut chunks = 0;
+        loop {
+            let r = client
+                .get(&url)
+                .header("Range", format!("bytes={got}-{}", got + CHUNK - 1))
+                // El User-Agent se hace coincidir con el cliente que resolvio la
+                // URL, por si acaso influye.
+                .header("User-Agent", cfg.user_agent)
+                .send()
+                .await;
+            match r {
+                Ok(resp) if resp.status().is_success() => {
+                    let n = resp.bytes().await.map(|b| b.len() as u64).unwrap_or(0);
+                    if n == 0 {
+                        break;
+                    }
+                    got += n;
+                    chunks += 1;
+                    if n < CHUNK || (expected > 0 && got >= expected) {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        let ok = expected > 0 && got >= expected;
+        println!(
+            "  {:<15} {chunks:>7} {:>9} {:>9}  {}",
+            cfg.id,
+            got / 1024,
+            expected / 1024,
+            if ok { "COMPLETO" } else { "CORTADO" }
+        );
+    }
+    println!();
+    Ok(())
+}
+
 pub async fn limits(ids: &[String]) -> Result<()> {
     let it = InnerTube::new()?;
     let client = reqwest::Client::new();
