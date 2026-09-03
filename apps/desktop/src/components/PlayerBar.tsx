@@ -3,7 +3,7 @@ import { api, fmtTime, thumbAt } from "../lib/api";
 import { playback, position, isFavorite, toggleFavorite, fullLyricsOpen, setFullLyricsOpen } from "../lib/store";
 import * as I from "./Icons";
 
-/** Barra de reproduccion flotante estilo DemoApp. */
+/** Barra de reproducción inferior de extremo a extremo estilo glassy-music (7.webp / 9.mp4). */
 export function PlayerBar() {
   let scrubBarRef!: HTMLDivElement;
   const [dragging, setDragging] = createSignal<number | null>(null);
@@ -47,149 +47,179 @@ export function PlayerBar() {
   };
 
   return (
-    <footer class="no-drag shrink-0 px-4 pb-4">
-      <div class="panel relative px-4 pt-3 pb-3">
-        {/* Barra de progreso superior interactiva con hover suave */}
-        <div class="absolute -top-1.5 inset-x-4 h-3 flex items-center cursor-pointer group"
-          ref={scrubBarRef}
-          onMouseDown={handleMouseDown}
-          onClick={(e) => scrubTo(e.clientX, true)}
+    <footer class="player-bar-container relative h-[72px] px-5 flex items-center justify-between z-30 select-none">
+      {/* Barra de progreso interactiva continua a todo lo ancho en el borde superior */}
+      <div
+        class="absolute -top-[3px] inset-x-0 h-3 flex items-center cursor-pointer group z-40"
+        ref={scrubBarRef}
+        onMouseDown={handleMouseDown}
+        onClick={(e) => scrubTo(e.clientX, true)}
+      >
+        <div class="scrub w-full relative h-[3px] group-hover:h-[5px] transition-all bg-white/15">
+          <div class="scrub-buffered" style={{ width: `${playback.buffered * 100}%` }} />
+          <div class="scrub-played" style={{ width: `${pct()}%` }} />
+          <div
+            class="scrub-knob absolute top-1/2 -translate-y-1/2 size-3.5 rounded-full bg-white shadow-lg transition-transform scale-0 group-hover:scale-100 pointer-events-none"
+            style={{ left: `${pct()}%` }}
+          />
+        </div>
+      </div>
+
+      {/* 1. Izquierda: Controles de transporte + Tiempo exacto 0:05 / 3:21 */}
+      <div class="flex items-center gap-2 min-w-[240px]">
+        <button
+          class="icon-btn size-9 text-white/80 hover:text-white"
+          onClick={() => api.prev()}
+          title="Previous track"
         >
-          <div class="scrub w-full relative h-[3px] group-hover:h-[5px] transition-all duration-150 rounded-full bg-white/15">
-            <div class="scrub-buffered" style={{ width: `${playback.buffered * 100}%` }} />
-            <div class="scrub-played" style={{ width: `${pct()}%` }} />
-            <div
-              class="scrub-knob absolute top-1/2 -translate-y-1/2 size-3 rounded-full bg-white shadow-md transition-transform scale-0 group-hover:scale-100 pointer-events-none"
-              style={{ left: `${pct()}%` }}
+          <I.Prev size={19} />
+        </button>
+        <button
+          class="icon-btn size-10 rounded-full !opacity-100 bg-white text-black hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center justify-center"
+          onClick={() => api.togglePlay()}
+          title={playback.playing ? "Pause" : "Play"}
+        >
+          <Show when={!playback.loading} fallback={<Spinner />}>
+            <Show when={playback.playing} fallback={<I.Play size={18} class="translate-x-[1px]" />}>
+              <I.Pause size={18} />
+            </Show>
+          </Show>
+        </button>
+        <button
+          class="icon-btn size-9 text-white/80 hover:text-white"
+          onClick={() => api.next()}
+          title="Next track"
+        >
+          <I.Next size={19} />
+        </button>
+
+        {/* Contador de tiempo 0:05 / 3:21 */}
+        <span class="ml-3 text-xs font-semibold tabular-nums text-white/75">
+          {fmtTime(shown())} <span class="text-white/35 font-normal">/</span> {fmtTime(playback.durationMs)}
+        </span>
+      </div>
+
+      {/* 2. Centro: Carátula + Título + Artista + Thumbs & Más opciones */}
+      <div class="flex items-center gap-3.5 max-w-[500px]">
+        <Show
+          when={playback.track?.thumbnail}
+          fallback={<div class="size-11 shrink-0 rounded-lg bg-white/10" />}
+        >
+          <img
+            src={thumbAt(playback.track!.thumbnail, 96)!}
+            alt=""
+            class="size-11 shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-sm"
+          />
+        </Show>
+        <div class="min-w-0 max-w-[260px]">
+          <div class="truncate text-[13.5px] font-bold text-white leading-snug">
+            {playback.track?.title ?? "Nothing playing"}
+          </div>
+          <div class="truncate text-[11.5px] text-white/55 font-medium mt-0.5">
+            {playback.track?.author ?? ""}
+          </div>
+        </div>
+
+        <Show when={playback.track}>
+          <div class="flex items-center gap-0.5 ml-1">
+            <button
+              class="icon-btn size-8 text-white/60 hover:text-white"
+              title="Dislike"
+            >
+              <I.ThumbsDown size={16} />
+            </button>
+            <button
+              class="icon-btn size-8"
+              classList={{
+                "text-[var(--accent)] !opacity-100": isFavorite(),
+                "text-white/60 hover:text-white": !isFavorite(),
+              }}
+              onClick={() => toggleFavorite()}
+              title={isFavorite() ? "Remove from liked" : "Like"}
+            >
+              <I.ThumbsUp size={16} />
+            </button>
+            <button
+              class="icon-btn size-8 text-white/60 hover:text-white"
+              title="More actions"
+            >
+              <I.More size={16} />
+            </button>
+          </div>
+        </Show>
+      </div>
+
+      {/* 3. Derecha: Volumen + Repetir + Aleatorio + Expandir/Cerrar */}
+      <div class="flex items-center justify-end gap-1.5 min-w-[240px]">
+        {/* Volumen con slider emergente */}
+        <div
+          class="flex items-center gap-2 mr-2"
+          onMouseEnter={() => setVolumeOpen(true)}
+          onMouseLeave={() => setVolumeOpen(false)}
+        >
+          <button
+            class="icon-btn size-8 text-white/70 hover:text-white"
+            onClick={() => api.setVolume(playback.volume > 0 ? 0 : 1)}
+            title="Volume"
+          >
+            <Show when={playback.volume > 0} fallback={<I.VolumeMute size={18} />}>
+              <I.Volume size={18} />
+            </Show>
+          </button>
+          <div
+            class="overflow-hidden transition-all duration-200"
+            style={{ width: volumeOpen() ? "84px" : "0px" }}
+          >
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={playback.volume}
+              onInput={(e) => api.setVolume(Number(e.currentTarget.value))}
+              class="w-full accent-white h-1 cursor-pointer"
+              aria-label="Volume"
             />
           </div>
         </div>
 
-        {/* 3 Columnas: Transporte + Info Pista + Opciones & Volumen */}
-        <div class="grid grid-cols-[1.1fr_1.3fr_1.1fr] items-center gap-4 pt-1">
-          {/* Columna Izquierda: Botones de transporte + Tiempo */}
-          <div class="flex items-center gap-1.5">
-            <button
-              class="icon-btn size-8"
-              classList={{ "text-[var(--accent)]": playback.shuffle }}
-              onClick={() => api.setShuffle(!playback.shuffle)}
-              title="Aleatorio"
-            >
-              <I.Shuffle size={16} />
-            </button>
-            <button class="icon-btn size-8" onClick={() => api.prev()} title="Anterior">
-              <I.Prev size={18} />
-            </button>
-            <button
-              class="icon-btn size-10 rounded-full !opacity-100 bg-white/10 hover:bg-white/20 active:scale-95 transition-all shadow-md"
-              onClick={() => api.togglePlay()}
-              title={playback.playing ? "Pausa" : "Reproducir"}
-            >
-              <Show when={!playback.loading} fallback={<Spinner />}>
-                <Show when={playback.playing} fallback={<I.Play size={18} />}>
-                  <I.Pause size={18} />
-                </Show>
-              </Show>
-            </button>
-            <button class="icon-btn size-8" onClick={() => api.next()} title="Siguiente">
-              <I.Next size={18} />
-            </button>
-            <button
-              class="icon-btn size-8"
-              classList={{ "text-[var(--accent)]": playback.repeat !== "off" }}
-              onClick={cycleRepeat}
-              title={`Repetir: ${playback.repeat}`}
-            >
-              <Show when={playback.repeat === "one"} fallback={<I.Repeat size={16} />}>
-                <I.RepeatOne size={16} />
-              </Show>
-            </button>
+        {/* Repetir */}
+        <button
+          class="icon-btn size-8"
+          classList={{
+            "text-[var(--accent)] !opacity-100": playback.repeat !== "off",
+            "text-white/70 hover:text-white": playback.repeat === "off",
+          }}
+          onClick={cycleRepeat}
+          title={`Repeat: ${playback.repeat}`}
+        >
+          <Show when={playback.repeat === "one"} fallback={<I.Repeat size={17} />}>
+            <I.RepeatOne size={17} />
+          </Show>
+        </button>
 
-            {/* Contador de tiempo 0:19 / 3:10 */}
-            <span class="ml-2 text-[11.5px] tabular-nums font-medium opacity-65">
-              {fmtTime(shown())} <span class="opacity-35">/</span> {fmtTime(playback.durationMs)}
-            </span>
-          </div>
+        {/* Aleatorio */}
+        <button
+          class="icon-btn size-8"
+          classList={{
+            "text-[var(--accent)] !opacity-100": playback.shuffle,
+            "text-white/70 hover:text-white": !playback.shuffle,
+          }}
+          onClick={() => api.setShuffle(!playback.shuffle)}
+          title="Shuffle"
+        >
+          <I.Shuffle size={17} />
+        </button>
 
-          {/* Columna Central: Información de la canción actual */}
-          <div class="flex min-w-0 items-center justify-center gap-3">
-            <Show
-              when={playback.track?.thumbnail}
-              fallback={<div class="size-10 shrink-0 rounded-lg bg-white/5" />}
-            >
-              <img
-                src={thumbAt(playback.track!.thumbnail, 96)!}
-                alt=""
-                class="size-10 shrink-0 rounded-lg object-cover ring-1 ring-white/10 shadow-sm"
-              />
-            </Show>
-            <div class="min-w-0 max-w-[240px] text-center">
-              <div class="truncate text-[13px] font-semibold leading-tight">
-                {playback.track?.title ?? "Nada sonando"}
-              </div>
-              <div class="truncate text-[11px] opacity-50 mt-0.5">{playback.track?.author ?? ""}</div>
-            </div>
-            <Show when={playback.track}>
-              <button
-                class="icon-btn size-8 shrink-0"
-                classList={{ "!text-[var(--accent)] !opacity-100": isFavorite() }}
-                onClick={() => toggleFavorite()}
-                title={isFavorite() ? "Quitar de favoritos" : "Añadir a favoritos"}
-              >
-                <Show when={isFavorite()} fallback={<I.Heart size={16} />}>
-                  <I.HeartFilled size={16} />
-                </Show>
-              </button>
-            </Show>
-          </div>
-
-          {/* Columna Derecha: Volumen + Letras pantalla completa */}
-          <div class="flex items-center justify-end gap-2">
-            <div
-              class="flex items-center gap-2"
-              onMouseEnter={() => setVolumeOpen(true)}
-              onMouseLeave={() => setVolumeOpen(false)}
-            >
-              <button
-                class="icon-btn size-8"
-                onClick={() => api.setVolume(playback.volume > 0 ? 0 : 1)}
-                title="Volumen"
-              >
-                <Show when={playback.volume > 0} fallback={<I.VolumeMute size={17} />}>
-                  <I.Volume size={17} />
-                </Show>
-              </button>
-              <div
-                class="overflow-hidden transition-all duration-200"
-                style={{ width: volumeOpen() ? "84px" : "0px" }}
-              >
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.01"
-                  value={playback.volume}
-                  onInput={(e) => api.setVolume(Number(e.currentTarget.value))}
-                  class="w-full accent-[var(--accent)] h-1 cursor-pointer"
-                  aria-label="Volumen"
-                />
-              </div>
-            </div>
-
-            {/* Botón de letras en vivo estilo Apple Music / Fullscreen */}
-            <button
-              class="icon-btn size-8 transition-colors"
-              classList={{
-                "bg-white/20 text-white": fullLyricsOpen(),
-                "opacity-60 hover:opacity-100 hover:bg-white/10": !fullLyricsOpen(),
-              }}
-              onClick={() => setFullLyricsOpen(!fullLyricsOpen())}
-              title="Letras en pantalla completa"
-            >
-              <I.Lyrics size={16} />
-            </button>
-          </div>
-        </div>
+        {/* Chevron para abrir/cerrar letras en pantalla completa */}
+        <button
+          class="icon-btn size-8 ml-1 text-white/70 hover:text-white"
+          classList={{ "text-[var(--accent)] rotate-180": fullLyricsOpen() }}
+          onClick={() => setFullLyricsOpen(!fullLyricsOpen())}
+          title="Toggle Fullscreen Lyrics"
+        >
+          <I.ChevronUp size={18} />
+        </button>
       </div>
     </footer>
   );

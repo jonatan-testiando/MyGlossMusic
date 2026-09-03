@@ -144,3 +144,50 @@ export const More = svg(
   </>,
 );
 
+export const Menu = svg(
+  <>
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <line x1="3" y1="18" x2="21" y2="18" />
+  </>,
+  false,
+);
+
+export const Compass = svg(
+  <>
+    <circle cx="12" cy="12" r="10" />
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
+  </>,
+  false,
+);
+
+export const ThumbsUp = svg(
+  <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />,
+  false,
+);
+
+export const ThumbsDown = svg(
+  <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3" />,
+  false,
+);
+
+export const ChevronUp = svg(<path d="m18 15-6-6-6 6" />, false);
+export const ChevronDown = svg(<path d="m6 9 6 6 6-6" />, false);
+
+export const Pin = svg(
+  <>
+    <line x1="12" y1="17" x2="12" y2="22" />
+    <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
+  </>,
+  false,
+);
+
+export const Plus = svg(
+  <>
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </>,
+  false,
+);
+
+
