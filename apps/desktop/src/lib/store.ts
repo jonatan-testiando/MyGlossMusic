@@ -9,6 +9,7 @@ import {
   type Lyrics,
   type Palette,
   type PlaybackState,
+  type BrowsePage,
   type SearchChip,
   type SearchResult,
   type ShelfItem,
@@ -67,7 +68,75 @@ export const [loadingMore, setLoadingMore] = createSignal(false);
 const [searchOverflow, setSearchOverflow] = createSignal<string | null>(null);
 export const [searching, setSearching] = createSignal(false);
 export const [query, setQuery] = createSignal("");
-export const [view, setView] = createSignal<"home" | "search" | "library" | "diagnostics">("home");
+export type View = "home" | "search" | "library" | "diagnostics" | "browse";
+
+export const [view, setView] = createSignal<View>("home");
+
+/** Página de artista, álbum o playlist que se está viendo. */
+export const [browsePage, setBrowsePage] = createSignal<BrowsePage | null>(null);
+export const [browseLoading, setBrowseLoading] = createSignal(false);
+
+/**
+ * Historial de navegación.
+ *
+ * Hace falta de verdad desde que hay páginas de artista y de álbum: sin él,
+ * "atrás" no puede devolverte a la búsqueda de la que saliste. Las flechas de
+ * la cabecera hacían antes un apaño — atrás llevaba al inicio, pasara lo que
+ * pasara.
+ */
+type Destino = { view: View; browseId?: string; titulo?: string };
+
+const [historial, setHistorial] = createSignal<Destino[]>([{ view: "home" }]);
+const [posicion, setPosicion] = createSignal(0);
+
+export const puedeAtras = () => posicion() > 0;
+export const puedeAdelante = () => posicion() < historial().length - 1;
+
+/** Va a un destino nuevo, descartando lo que hubiera hacia delante. */
+export function navegar(d: Destino) {
+  const hasta = historial().slice(0, posicion() + 1);
+  setHistorial([...hasta, d]);
+  setPosicion(hasta.length);
+  aplicar(d);
+}
+
+export function atras() {
+  if (!puedeAtras()) return;
+  setPosicion(posicion() - 1);
+  aplicar(historial()[posicion()]);
+}
+
+export function adelante() {
+  if (!puedeAdelante()) return;
+  setPosicion(posicion() + 1);
+  aplicar(historial()[posicion()]);
+}
+
+function aplicar(d: Destino) {
+  setPlayerViewOpen(false);
+  setView(d.view);
+  if (d.view === "browse" && d.browseId) cargarBrowse(d.browseId);
+}
+
+/** Abre una página de artista, álbum o playlist. */
+export function openBrowse(browseId: string, titulo?: string) {
+  navegar({ view: "browse", browseId, titulo });
+}
+
+async function cargarBrowse(browseId: string) {
+  setBrowseLoading(true);
+  // Se limpia antes de pedir: si no, se ve la página anterior con el título
+  // nuevo mientras carga, que parece un fallo.
+  setBrowsePage(null);
+  try {
+    setBrowsePage(await api.browse(browseId));
+  } catch (e) {
+    console.error("no se pudo abrir la pagina", e);
+    setBrowsePage(null);
+  } finally {
+    setBrowseLoading(false);
+  }
+}
 export const [isFavorite, setIsFavorite] = createSignal(false);
 export const [resultsLabel, setResultsLabel] = createSignal<string | null>(null);
 
@@ -266,7 +335,9 @@ export async function runSearch(q: string) {
   }
 
   setSearching(true);
-  setView("search");
+  // Deja huella en el historial: "atrás" desde una página de artista tiene que
+  // devolver a la búsqueda, no al inicio.
+  if (view() !== "search") navegar({ view: "search" });
   setResultsLabel(null);
   setSearchFilter(null);
   setSearchMoreToken(null);

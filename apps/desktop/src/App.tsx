@@ -1,5 +1,13 @@
 import { ErrorBoundary, Show, createEffect, onMount } from "solid-js";
-import { TitleBar, Sidebar, HomeFeed, SearchView, LibraryView, Diagnostics } from "./components/Views";
+import {
+  TitleBar,
+  Sidebar,
+  HomeFeed,
+  SearchView,
+  LibraryView,
+  BrowseView,
+  Diagnostics,
+} from "./components/Views";
 import { PlayerBar } from "./components/PlayerBar";
 import { SidePanel } from "./components/SidePanel";
 import { FullScreenLyrics } from "./components/FullScreenLyrics";
@@ -123,6 +131,11 @@ export default function App() {
             <Show when={view() === "library"}>
               <div class="flex-1 h-full overflow-hidden p-6">
                 <LibraryView />
+              </div>
+            </Show>
+            <Show when={view() === "browse"}>
+              <div class="h-full flex-1 overflow-hidden">
+                <BrowseView />
               </div>
             </Show>
             <Show when={view() === "diagnostics"}>

@@ -14,13 +14,20 @@ import {
   results,
   searching,
   view,
-  setView,
   query,
   setQuery,
   runSearch,
   resultsLabel,
   playFromResults,
   playWithRadio,
+  navegar,
+  browsePage,
+  browseLoading,
+  openBrowse,
+  atras,
+  adelante,
+  puedeAtras,
+  puedeAdelante,
   searchChips,
   searchFilter,
   searchMoreToken,
@@ -53,8 +60,7 @@ export function TitleBar() {
         <div
           class="flex items-center gap-2 cursor-pointer select-none"
           onClick={() => {
-            setView("home");
-            setPlayerViewOpen(false);
+            navegar({ view: "home" });
           }}
           title="Posible Music"
         >
@@ -74,20 +80,17 @@ export function TitleBar() {
       <div class="no-drag flex items-center gap-3.5">
         <div class="flex items-center gap-1 text-white/60">
           <button
-            class="icon-btn size-7 rounded-full hover:bg-white/10 hover:text-white"
-            onClick={() => {
-              setView("home");
-              setPlayerViewOpen(false);
-            }}
+            class="icon-btn size-7 rounded-full hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-25"
+            onClick={atras}
+            disabled={!puedeAtras()}
             title="Atrás"
           >
             <I.ChevronLeft size={16} />
           </button>
           <button
-            class="icon-btn size-7 rounded-full hover:bg-white/10 hover:text-white"
-            onClick={() => {
-              if (playback.track) setPlayerViewOpen(true);
-            }}
+            class="icon-btn size-7 rounded-full hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-25"
+            onClick={adelante}
+            disabled={!puedeAdelante()}
             title="Adelante"
           >
             <I.ChevronRight size={16} />
@@ -278,8 +281,7 @@ export function Sidebar() {
   const collapsed = () => !sidebarOpen();
 
   const go = (id: (typeof items)[number]["id"]) => {
-    setView(id === "explore" ? "search" : id);
-    setPlayerViewOpen(false);
+    navegar({ view: id === "explore" ? "search" : id });
   };
 
   // Mientras se mira la canción no hay ninguna pestaña activa: se está en el
@@ -321,8 +323,7 @@ export function Sidebar() {
           <button
             class="flex w-full items-center justify-center gap-2 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-semibold py-2 px-3 text-white transition-all border border-white/10 shadow-sm"
             onClick={() => {
-              setView("library");
-              setPlayerViewOpen(false);
+              navegar({ view: "library" });
             }}
           >
             <I.Plus size={15} />
@@ -339,8 +340,7 @@ export function Sidebar() {
           <button
             class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
             onClick={() => {
-              setView("library");
-              setPlayerViewOpen(false);
+              navegar({ view: "library" });
             }}
           >
             <div class="flex items-center gap-1.5 text-xs font-semibold text-white">
@@ -355,8 +355,7 @@ export function Sidebar() {
           <button
             class="flex w-full items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-xs font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white/90"
             onClick={() => {
-              setView("diagnostics");
-              setPlayerViewOpen(false);
+              navegar({ view: "diagnostics" });
             }}
           >
             <I.Stethoscope size={13} class="shrink-0 text-white/40" />
@@ -556,11 +555,9 @@ export function HomeFeed() {
         thumbnail: item.thumbnail,
       });
       setPlayerViewOpen(true);
-    } else if (item.kind === "playlist") {
-      // Los ids de playlist de `browse` vienen con prefijo `VL`.
-      runSearch(item.id.replace(/^VL/, ""));
+    } else {
+      openBrowse(item.id, item.title);
     }
-    // Artistas y álbumes: pendientes de sus pantallas.
   };
 
   return (
@@ -673,8 +670,7 @@ export function SearchView() {
 
   const abrir = (item: ShelfItem, i: number) => {
     if (item.kind === "track") playFromResults(i);
-    else if (item.kind === "playlist") runSearch(item.id.replace(/^VL/, ""));
-    // Artistas y álbumes: pendientes de sus pantallas.
+    else openBrowse(item.id, item.title);
   };
 
   return (
@@ -804,6 +800,162 @@ export function SearchView() {
   );
 }
 
+
+/* ------------------------------------------------------- Artista y álbum */
+
+/**
+ * Página de artista, álbum o playlist.
+ *
+ * Las tres son el mismo endpoint con distinto `browseId`, así que son la misma
+ * pantalla: una cabecera y las estanterías que devuelva YouTube. Lo que cambia
+ * entre ellas es lo que trae la respuesta, no el código.
+ */
+export function BrowseView() {
+  const pagina = browsePage;
+
+  /** Todas las pistas de la página, en orden, para "Reproducir" y "Aleatorio". */
+  const pistas = () =>
+    (pagina()?.shelves ?? []).flatMap((e) => e.items.filter((i) => i.kind === "track"));
+
+  const reproducir = (desde = 0) => {
+    const lista = pistas();
+    const elegida = lista[desde];
+    if (!elegida) return;
+    playWithRadio({
+      videoId: elegida.id,
+      title: elegida.title,
+      subtitle: elegida.subtitle,
+      duration: elegida.duration,
+      thumbnail: elegida.thumbnail,
+    });
+    setPlayerViewOpen(true);
+  };
+
+  const aleatorio = () => {
+    const lista = pistas();
+    if (lista.length) reproducir(Math.floor(Math.random() * lista.length));
+  };
+
+  const abrir = (item: ShelfItem, i: number) => {
+    if (item.kind === "track") {
+      const desde = pistas().findIndex((t) => t.id === item.id);
+      reproducir(desde >= 0 ? desde : i);
+    } else {
+      openBrowse(item.id.replace(/^VL/, "VL"), item.title);
+    }
+  };
+
+  return (
+    <div class="scroll-area h-full">
+      <Show when={browseLoading()}>
+        <div class="px-8 py-6">
+          <div class="h-40 w-full animate-pulse rounded-2xl bg-white/8" />
+        </div>
+      </Show>
+
+      <Show when={pagina()}>
+        {/* Cabecera: portada a un lado, nombre y acciones al otro. */}
+        <header class="flex items-end gap-6 px-8 pb-6 pt-8">
+          <Show when={pagina()!.thumbnail}>
+            <img
+              src={thumbAt(pagina()!.thumbnail, 320)!}
+              alt=""
+              class="size-40 shrink-0 rounded-2xl object-cover shadow-[0_20px_50px_-15px_rgba(0,0,0,0.8)] ring-1 ring-white/10"
+            />
+          </Show>
+          <div class="min-w-0 flex-1">
+            <h1 class="truncate text-4xl font-extrabold tracking-tight text-white">
+              {pagina()!.title ?? "Sin título"}
+            </h1>
+            <Show when={pagina()!.subtitle}>
+              <p class="mt-1.5 truncate text-sm font-medium text-white/60">
+                {pagina()!.subtitle}
+              </p>
+            </Show>
+
+            <Show when={pistas().length > 0}>
+              <div class="mt-4 flex items-center gap-2">
+                <button
+                  class="flex items-center gap-2 rounded-full bg-white px-5 py-2 text-sm font-bold text-black transition-transform hover:scale-[1.03] active:scale-95"
+                  onClick={() => reproducir(0)}
+                >
+                  <I.Play size={16} class="translate-x-[1px]" />
+                  Reproducir
+                </button>
+                <button
+                  class="flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-5 py-2 text-sm font-semibold text-white hover:bg-white/15"
+                  onClick={aleatorio}
+                >
+                  <I.Shuffle size={16} />
+                  Aleatorio
+                </button>
+              </div>
+            </Show>
+          </div>
+        </header>
+
+        {/* Las pistas van en lista vertical y lo demás en carrusel, que es como
+            lo presenta la referencia: las canciones de un artista se leen en
+            columna, sus álbumes se hojean en fila. */}
+        <div class="space-y-9 px-8 pb-10">
+          <For each={pagina()!.shelves}>
+            {(e) => (
+              <Show
+                when={e.items.some((i) => i.kind !== "track")}
+                fallback={<TrackList title={e.title} items={e.items} onPick={abrir} />}
+              >
+                <Shelf title={e.title} items={e.items} onPick={abrir} />
+              </Show>
+            )}
+          </For>
+        </div>
+      </Show>
+
+      <Show when={!browseLoading() && !pagina()}>
+        <p class="mt-20 text-center text-sm text-white/40">
+          No se pudo abrir esta página.
+        </p>
+      </Show>
+    </div>
+  );
+}
+
+/**
+ * Lista vertical de pistas, para las estanterías que son una lista y no un
+ * carrusel — la de canciones de un álbum, por ejemplo.
+ */
+function TrackList(p: { title: string; items: ShelfItem[]; onPick: (i: ShelfItem, n: number) => void }) {
+  return (
+    <section>
+      {/* Un álbum trae su lista sin título: YouTube lo pone en la cabecera. */}
+      <Show when={p.title}>
+        <h2 class="mb-3 text-xl font-bold tracking-tight text-white">{p.title}</h2>
+      </Show>
+      <div class="flex flex-col gap-0.5">
+        <For each={p.items}>
+          {(t, i) => (
+            <button
+              class="group flex items-center gap-3.5 rounded-xl px-3 py-2 text-left transition-colors hover:bg-white/[0.06]"
+              onClick={() => p.onPick(t, i())}
+            >
+              <span class="w-6 shrink-0 text-center text-xs tabular-nums text-white/35 group-hover:hidden">
+                {i() + 1}
+              </span>
+              <span class="hidden w-6 shrink-0 justify-center text-white group-hover:flex">
+                <I.Play size={13} />
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-semibold text-white">{t.title}</div>
+                <div class="truncate text-xs text-white/55">{t.subtitle}</div>
+              </div>
+              <span class="shrink-0 text-xs tabular-nums text-white/45">{t.duration ?? ""}</span>
+            </button>
+          )}
+        </For>
+      </div>
+    </section>
+  );
+}
 
 /* ---------------------------------------------------------------- Library */
 

@@ -232,7 +232,37 @@ export const mockApi = {
       },
     ],
   }),
-  browse: async () => ({ title: null, subtitle: null, thumbnail: null, shelves: [] }),
+  // Con la forma que devuelve `browse` de verdad para un artista: cabecera, una
+  // lista de pistas (sin título, como los álbumes) y un carrusel.
+  browse: async (browseId: string) => ({
+    title: browseId.startsWith("MPRE") ? "Fool For You" : "Kastra",
+    subtitle: browseId.startsWith("MPRE") ? "Single • 2021" : "1,25 M de oyentes mensuales",
+    thumbnail: COVER,
+    shelves: [
+      {
+        title: "Canciones populares",
+        items: TRACKS.slice(0, 5).map((t) => ({
+          kind: "track" as const,
+          id: t.videoId,
+          title: t.title,
+          subtitle: t.author,
+          thumbnail: COVER,
+          duration: t.d,
+        })),
+      },
+      {
+        title: "Álbumes",
+        items: TRACKS.slice(0, 6).map((t, i) => ({
+          kind: "album" as const,
+          id: `MPREb_${i}`,
+          title: t.title,
+          subtitle: `Single • ${2020 + i}`,
+          thumbnail: COVER,
+          duration: null,
+        })),
+      },
+    ],
+  }),
 
   radio: async () => ({
     playlistId: "RDAMVMjig2aRZbHm4",
