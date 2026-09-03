@@ -453,7 +453,16 @@ pub fn run() {
                 }
             }
 
-            media::init(app.handle(), engine.clone());
+            // Interruptor de diagnostico: la tarjeta multimedia (SMTC) va por
+            // COM en el hilo principal y es sospechosa del congelamiento al
+            // restaurar. Con POSIBLE_NO_SMTC=1 se desactiva entera para poder
+            // bisecar el fallo con el arnes de minimizar/restaurar.
+            let smtc_enabled = std::env::var("POSIBLE_NO_SMTC").is_err();
+            if smtc_enabled {
+                media::init(app.handle(), engine.clone());
+            } else {
+                tracing::warn!("SMTC desactivado (POSIBLE_NO_SMTC)");
+            }
 
             // Sonda de reproduccion: `POSIBLE_PLAY_TEST=<videoId>` reproduce una
             // pista al arrancar y registra el progreso. Verifica la cadena
@@ -539,7 +548,11 @@ pub fn run() {
                     }
                 });
             }
-            discord::spawn(engine.subscribe());
+            if std::env::var("POSIBLE_NO_DISCORD").is_err() {
+                discord::spawn(engine.subscribe());
+            } else {
+                tracing::warn!("Discord RPC desactivado (POSIBLE_NO_DISCORD)");
+            }
 
             // Reenvia cada cambio de estado del motor a la interfaz. Es un canal
             // `watch`, asi que no hay sondeo: la interfaz solo se despierta
@@ -586,7 +599,7 @@ pub fn run() {
                     let play_changed = !media_primed || media_key.1 != last_media.1;
                     let pos_due =
                         last_media_push.elapsed() >= std::time::Duration::from_secs(2);
-                    if track_changed || play_changed || pos_due {
+                    if smtc_enabled && (track_changed || play_changed || pos_due) {
                         media_primed = true;
                         last_media = media_key;
                         last_media_push = std::time::Instant::now();
