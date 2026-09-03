@@ -100,27 +100,151 @@ export function TitleBar() {
 
 function SearchBox() {
   let input!: HTMLInputElement;
+  const [sugerencias, setSugerencias] = createSignal<string[]>([]);
+  const [abierto, setAbierto] = createSignal(false);
+  // -1 = nada resaltado; entonces Intro busca lo que hay escrito.
+  const [resaltada, setResaltada] = createSignal(-1);
+
+  /**
+   * Freno y guardia de carrera.
+   *
+   * El freno evita una petición por tecla. La guardia hace falta igualmente:
+   * dos peticiones en vuelo pueden volver en cualquier orden, y sin ella la
+   * respuesta de "kast" podría pisar a la de "kastra" y el desplegable se
+   * quedaría mostrando sugerencias de algo que ya no está escrito.
+   */
+  let temporizador: number | undefined;
+  let ultimaPedida = "";
+
+  const pedirSugerencias = (texto: string) => {
+    clearTimeout(temporizador);
+    const limpio = texto.trim();
+    if (limpio.length < 2) {
+      setSugerencias([]);
+      setAbierto(false);
+      return;
+    }
+    temporizador = window.setTimeout(async () => {
+      ultimaPedida = limpio;
+      try {
+        const res = await api.searchSuggestions(limpio);
+        if (ultimaPedida !== limpio) return;
+        setSugerencias(res);
+        setResaltada(-1);
+        setAbierto(res.length > 0);
+      } catch {
+        if (ultimaPedida === limpio) setAbierto(false);
+      }
+    }, 180);
+  };
+
+  const buscar = (texto: string) => {
+    clearTimeout(temporizador);
+    setAbierto(false);
+    setQuery(texto);
+    runSearch(texto);
+    setPlayerViewOpen(false);
+    input.blur();
+  };
+
+  const enTecla = (e: KeyboardEvent) => {
+    if (e.key === "Escape") {
+      setAbierto(false);
+      return;
+    }
+    if (!abierto() || sugerencias().length === 0) return;
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      const paso = e.key === "ArrowDown" ? 1 : -1;
+      const total = sugerencias().length;
+      // Se recorre incluyendo el -1, para poder volver a lo escrito a mano.
+      setResaltada((i) => {
+        const siguiente = i + paso;
+        if (siguiente < -1) return total - 1;
+        if (siguiente >= total) return -1;
+        return siguiente;
+      });
+    } else if (e.key === "Enter" && resaltada() >= 0) {
+      e.preventDefault();
+      buscar(sugerencias()[resaltada()]);
+    }
+  };
+
   return (
-    <form
-      class="no-drag flex-1 max-w-[540px] mx-auto px-4"
-      onSubmit={(e) => {
-        e.preventDefault();
-        runSearch(query());
-        setPlayerViewOpen(false);
-        input.blur();
-      }}
-    >
-      <div class="flex items-center gap-3 px-4 py-2 rounded-full bg-white/[0.08] hover:bg-white/[0.12] focus-within:bg-white/[0.16] focus-within:ring-1 focus-within:ring-white/25 transition-all border border-white/5">
-        <I.Search size={16} class="shrink-0 text-white/50" />
-        <input
-          ref={input}
-          value={query()}
-          onInput={(e) => setQuery(e.currentTarget.value)}
-          placeholder="Buscar canciones, álbumes, artistas o podcasts"
-          class="w-full bg-transparent text-sm text-white placeholder:text-white/40 outline-none"
-        />
-      </div>
-    </form>
+    <div class="no-drag relative mx-auto w-full max-w-[540px] px-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          buscar(query());
+        }}
+      >
+        <div
+          class="flex items-center gap-3 border border-white/5 bg-white/[0.08] px-4 py-2 transition-all hover:bg-white/[0.12] focus-within:bg-white/[0.16] focus-within:ring-1 focus-within:ring-white/25"
+          classList={{ "rounded-full": !abierto(), "rounded-t-2xl": abierto() }}
+        >
+          <I.Search size={16} class="shrink-0 text-white/50" />
+          <input
+            ref={input}
+            value={query()}
+            onInput={(e) => {
+              setQuery(e.currentTarget.value);
+              pedirSugerencias(e.currentTarget.value);
+            }}
+            onFocus={() => setAbierto(sugerencias().length > 0)}
+            // Con un cierre inmediato, el clic en una sugerencia nunca llega:
+            // el desplegable desaparece antes de que se registre.
+            onBlur={() => setTimeout(() => setAbierto(false), 120)}
+            onKeyDown={enTecla}
+            placeholder="Buscar canciones, álbumes, artistas o podcasts"
+            class="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+            autocomplete="off"
+            spellcheck={false}
+          />
+          <Show when={query()}>
+            <button
+              type="button"
+              class="icon-btn size-6 shrink-0 text-white/50 hover:text-white"
+              onClick={() => {
+                setQuery("");
+                setSugerencias([]);
+                setAbierto(false);
+                input.focus();
+              }}
+              title="Borrar"
+            >
+              <I.Close size={13} />
+            </button>
+          </Show>
+        </div>
+      </form>
+
+      <Show when={abierto()}>
+        <ul class="glass-card absolute inset-x-4 top-full z-50 max-h-[60vh] overflow-y-auto rounded-b-2xl rounded-t-none border-t-0 py-1 shadow-2xl">
+          <For each={sugerencias()}>
+            {(s, i) => (
+              <li>
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-white/85 transition-colors"
+                  classList={{ "bg-white/15 text-white": resaltada() === i() }}
+                  // `mousedown` y no `click`: en `click` el `blur` del campo ya
+                  // ha cerrado el desplegable y el botón ya no existe.
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    buscar(s);
+                  }}
+                  onMouseEnter={() => setResaltada(i())}
+                >
+                  <I.Search size={14} class="shrink-0 text-white/35" />
+                  <span class="truncate">{s}</span>
+                </button>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
+    </div>
   );
 }
 

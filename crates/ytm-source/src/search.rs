@@ -19,6 +19,7 @@ use crate::clients::WEB_REMIX;
 use crate::innertube::InnerTube;
 
 const SEARCH_URL: &str = "https://music.youtube.com/youtubei/v1/search";
+const SUGGEST_URL: &str = "https://music.youtube.com/youtubei/v1/music/get_search_suggestions";
 
 /// Un resultado de busqueda.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -92,6 +93,71 @@ impl InnerTube {
         let json: Value = res.json().await.context("respuesta de busqueda ilegible")?;
         Ok(parse_results(&json))
     }
+}
+
+impl InnerTube {
+    /// Sugerencias mientras se escribe, como el desplegable de YouTube Music.
+    ///
+    /// Es un endpoint distinto del de busqueda y mucho mas barato: devuelve solo
+    /// texto. Por eso puede llamarse en cada pulsacion (con su freno) sin que
+    /// cueste como una busqueda entera.
+    pub async fn search_suggestions(&self, query: &str) -> Result<Vec<String>> {
+        if query.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let body = json!({
+            "context": {
+                "client": {
+                    "clientName": WEB_REMIX.client_name,
+                    "clientVersion": WEB_REMIX.client_version,
+                    "hl": "es",
+                    "gl": "US",
+                }
+            },
+            "input": query,
+        });
+
+        let res = self
+            .http_ref()
+            .post(SUGGEST_URL)
+            .header("User-Agent", WEB_REMIX.user_agent)
+            .header("X-YouTube-Client-Name", WEB_REMIX.client_name_id.to_string())
+            .header("X-YouTube-Client-Version", WEB_REMIX.client_version)
+            .header("Content-Type", "application/json")
+            .header("Origin", "https://music.youtube.com")
+            .header("Referer", "https://music.youtube.com/")
+            .json(&body)
+            .send()
+            .await
+            .context("fallo la peticion de sugerencias")?
+            .error_for_status()
+            .context("el servidor rechazo las sugerencias")?;
+
+        let json: Value = res.json().await.context("sugerencias ilegibles")?;
+        Ok(parse_suggestions(&json))
+    }
+}
+
+/// Saca el texto de cada sugerencia.
+///
+/// Igual que en la busqueda, se recorre el arbol por nombre de renderer. El
+/// desplegable mezcla dos tipos: `searchSuggestionRenderer` (lo que YouTube
+/// propone) y `musicResponsiveListItemRenderer` (canciones concretas). Aqui solo
+/// interesan las primeras — para las segundas ya esta la busqueda.
+pub fn parse_suggestions(root: &Value) -> Vec<String> {
+    let mut renderers = Vec::new();
+    collect_by_key(root, "searchSuggestionRenderer", &mut renderers);
+
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for r in renderers {
+        let texto = runs_text(r.get("suggestion"));
+        if !texto.is_empty() && seen.insert(texto.clone()) {
+            out.push(texto);
+        }
+    }
+    out
 }
 
 /// Extrae los resultados sin depender de la forma del arbol.
@@ -279,6 +345,43 @@ mod tests {
         assert_eq!(out[0].duration.as_deref(), Some("3:45"));
         assert_eq!(out[0].subtitle, "Artista \u{2022} Album");
         assert_eq!(out[0].thumbnail.as_deref(), Some("https://ejemplo/grande.jpg"));
+    }
+
+    #[test]
+    fn lee_las_sugerencias_del_desplegable() {
+        let payload = json!({ "contents": [{ "searchSuggestionsSectionRenderer": { "contents": [
+            { "searchSuggestionRenderer": { "suggestion": { "runs": [
+                { "text": "kastra " }, { "text": "fool for you" }
+            ]}}},
+            { "searchSuggestionRenderer": { "suggestion": { "runs": [
+                { "text": "kastra circles" }
+            ]}}}
+        ]}}]});
+        assert_eq!(
+            parse_suggestions(&payload),
+            ["kastra fool for you", "kastra circles"]
+        );
+    }
+
+    #[test]
+    fn las_sugerencias_no_se_repiten() {
+        let una = json!({ "searchSuggestionRenderer": {
+            "suggestion": { "runs": [{ "text": "repetida" }] }
+        }});
+        let payload = json!({ "a": una.clone(), "b": una });
+        assert_eq!(parse_suggestions(&payload).len(), 1);
+    }
+
+    #[test]
+    fn las_canciones_del_desplegable_no_cuentan_como_sugerencia() {
+        // El desplegable mezcla sugerencias de texto con canciones concretas;
+        // estas ultimas ya las cubre la busqueda.
+        let payload = json!({ "musicResponsiveListItemRenderer": {
+            "playlistItemData": { "videoId": "abcdefghijk" },
+            "flexColumns": [{ "musicResponsiveListItemFlexColumnRenderer":
+                { "text": { "runs": [{ "text": "Una Cancion" }] } } }]
+        }});
+        assert!(parse_suggestions(&payload).is_empty());
     }
 
     #[test]

@@ -92,6 +92,19 @@ async fn playlist(
     state.innertube.playlist(&id).await.map_err(|e| e.to_string())
 }
 
+/// Sugerencias mientras se escribe.
+#[tauri::command]
+async fn search_suggestions(
+    state: tauri::State<'_, App>,
+    query: String,
+) -> Result<Vec<String>, String> {
+    state
+        .innertube
+        .search_suggestions(&query)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Feed de inicio.
 #[tauri::command]
 async fn home(state: tauri::State<'_, App>) -> Result<ytm_source::BrowsePage, String> {
@@ -721,6 +734,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             search,
+            search_suggestions,
             playlist,
             home,
             browse,

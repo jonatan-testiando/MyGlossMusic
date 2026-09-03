@@ -106,6 +106,20 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
+        "suggest" => {
+            let q = args[1..].join(" ");
+            anyhow::ensure!(!q.is_empty(), "falta la consulta");
+            let it = InnerTube::new()?;
+            let s = it.search_suggestions(&q).await?;
+            println!("
+  {} sugerencias para: {q}
+", s.len());
+            for (i, x) in s.iter().enumerate() {
+                println!("  {:>2}. {x}", i + 1);
+            }
+            println!();
+            Ok(())
+        }
         "engine" => {
             let id = video_id_arg(&args)?;
             engine::run(&id).await
@@ -188,18 +202,24 @@ async fn main() -> Result<()> {
 
 fn print_usage() {
     eprintln!(
-        "ytm-spike - validacion de extraccion y reproduccion\n\n\
-         USO:\n  \
-           ytm-spike probe <videoId>              prueba todos los clientes InnerTube\n  \
-           ytm-spike play  <videoId> [opciones]   extrae y reproduce
-  \n           ytm-spike browse [browseId] [params]  inicio, artista o album
+        "ytm-spike - validacion de extraccion y reproduccion
 
-\
-         OPCIONES de play:\n  \
-           --client <id>   fuerza un cliente concreto (ios, android_vr, tv, ...)\n  \
-           --keep          conserva el archivo descargado\n"
+         USO:
+             ytm-spike probe <videoId>              prueba todos los clientes InnerTube
+             ytm-spike play  <videoId> [opciones]   extrae y reproduce
+             ytm-spike search <texto>               busca canciones
+             ytm-spike suggest <texto>              sugerencias del buscador
+             ytm-spike browse [browseId] [params]   inicio, artista o album
+             ytm-spike engine <videoId>             motor de audio
+             ytm-spike bench  <videoId>             mide el throttling
+
+         OPCIONES de play:
+             --client <id>   fuerza un cliente concreto (ios, android_vr, tv, ...)
+             --keep          conserva el archivo descargado
+"
     );
 }
+
 
 fn video_id_arg(args: &[String]) -> Result<String> {
     let raw = args

@@ -174,6 +174,15 @@ export const mockApi = {
     emit();
   },
   getState: async () => ({ ...state }),
+  searchSuggestions: async (q: string) => {
+    const base = TRACKS.map((t) => t.title.toLowerCase());
+    const extra = ["remix", "en directo", "1 hora", "slowed"];
+    return base
+      .filter((t) => t.includes(q.toLowerCase().trim()))
+      .flatMap((t) => [t, ...extra.map((e) => `${t} ${e}`)])
+      .slice(0, 10);
+  },
+
   getPalette: async () => palette,
   getLyrics: async () => lyrics,
   toggleFavorite: async () => {

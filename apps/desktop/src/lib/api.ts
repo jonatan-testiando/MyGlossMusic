@@ -98,6 +98,9 @@ const realApi = {
   search: (query: string, onlySongs = true) =>
     invoke<SearchResult[]>("search", { query, onlySongs }),
 
+  searchSuggestions: (query: string) =>
+    invoke<string[]>("search_suggestions", { query }),
+
   playlist: (id: string) => invoke<PlaylistResult>("playlist", { id }),
 
   playQueue: (tracks: Partial<Track>[], start: number) =>
