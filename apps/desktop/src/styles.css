@@ -119,48 +119,63 @@ body {
 
   background-color: var(--c);
   /* El foco que mas superficie ocupa en la portada tambien manda en la ventana. */
-  opacity: calc(0.38 + var(--w) * 0.72);
+  opacity: calc(0.55 + var(--w) * 0.62);
   /* `screen` suma luz en vez de taparla: donde dos focos se cruzan sale un tercer
      color mas claro, que es lo que hace que la ventana parezca iluminada y no
      pintada. Con mezcla normal el resultado es plano y siempre mas oscuro que el
      foco mas claro. */
   mix-blend-mode: screen;
 
-  -webkit-mask-image: radial-gradient(closest-side, #000 0%, rgb(0 0 0 / 0.55) 45%, transparent 100%);
-  mask-image: radial-gradient(closest-side, #000 0%, rgb(0 0 0 / 0.55) 45%, transparent 100%);
+  -webkit-mask-image: radial-gradient(closest-side, #000 0%, rgb(0 0 0 / 0.78) 52%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 0%, rgb(0 0 0 / 0.78) 52%, transparent 100%);
 
   transition: background-color 900ms var(--ease), opacity 900ms var(--ease);
-  animation: ambient-drift 34s ease-in-out infinite alternate;
+  animation: ambient-drift 23s ease-in-out infinite alternate;
   will-change: transform;
 }
 
 /* Duraciones sin multiplos comunes para que los focos no vuelvan a alinearse:
    si coincidieran, la deriva se leeria como un latido. */
 .ambient-spot:nth-child(2) {
-  animation-duration: 43s;
+  animation-duration: 29s;
   animation-delay: -7s;
 }
 .ambient-spot:nth-child(3) {
-  animation-duration: 51s;
+  animation-duration: 37s;
   animation-delay: -19s;
   animation-direction: alternate-reverse;
 }
 .ambient-spot:nth-child(4) {
-  animation-duration: 39s;
+  animation-duration: 31s;
   animation-delay: -12s;
   animation-direction: alternate-reverse;
 }
 .ambient-spot:nth-child(5) {
-  animation-duration: 61s;
+  animation-duration: 43s;
   animation-delay: -25s;
 }
 
+/*
+ * Los focos derivan Y respiran.
+ *
+ * La referencia va cambiando de color mientras suena porque muestrea los
+ * fotogramas del video. Aqui no hay video, pero si cinco focos con periodos sin
+ * multiplos comunes: al subir y bajar cada uno por su cuenta, el color que
+ * domina la mezcla cambia todo el rato sin repetirse. Es el mismo efecto por
+ * otro camino.
+ *
+ * La opacidad se calcula con `--w` tambien aqui: los fotogramas ganan a la
+ * declaracion estatica, asi que si no la repitiera, todos los focos respirarian
+ * con el mismo peso y se perderia el orden de la portada.
+ */
 @keyframes ambient-drift {
   from {
     transform: translate3d(-4%, -3%, 0) scale(1);
+    opacity: calc((0.55 + var(--w) * 0.62) * 0.5);
   }
   to {
-    transform: translate3d(5%, 4%, 0) scale(1.12);
+    transform: translate3d(5%, 4%, 0) scale(1.14);
+    opacity: calc(0.55 + var(--w) * 0.62);
   }
 }
 
@@ -173,8 +188,8 @@ body {
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(to bottom, rgb(0 0 0 / 0.24) 0, transparent 110px),
-    linear-gradient(to top, rgb(0 0 0 / 0.30) 0, transparent 150px);
+    linear-gradient(to bottom, rgb(0 0 0 / 0.14) 0, transparent 90px),
+    linear-gradient(to top, rgb(0 0 0 / 0.18) 0, transparent 120px);
   pointer-events: none;
 }
 

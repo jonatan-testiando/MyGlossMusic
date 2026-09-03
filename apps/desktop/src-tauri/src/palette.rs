@@ -119,17 +119,75 @@ fn rgb_to_oklab(r: u8, g: u8, b: u8) -> Oklab {
     }
 }
 
-fn oklab_to_rgb(c: Oklab) -> (u8, u8, u8) {
+/// Componentes RGB lineales SIN recortar. Fuera de [0,1] el color no existe en
+/// sRGB y no se puede pintar tal cual.
+fn oklab_to_linear(c: Oklab) -> (f32, f32, f32) {
     let l = (c.l + 0.396_337_78 * c.a + 0.215_803_76 * c.b).powi(3);
     let m = (c.l - 0.105_561_346 * c.a - 0.063_854_17 * c.b).powi(3);
     let s = (c.l - 0.089_484_18 * c.a - 1.291_485_5 * c.b).powi(3);
 
-    let r = 4.076_741_7 * l - 3.307_711_6 * m + 0.230_969_94 * s;
-    let g = -1.268_438 * l + 2.609_757_4 * m - 0.341_319_38 * s;
-    let b = -0.004_196_086 * l - 0.703_418_6 * m + 1.707_614_7 * s;
+    (
+        4.076_741_7 * l - 3.307_711_6 * m + 0.230_969_94 * s,
+        -1.268_438 * l + 2.609_757_4 * m - 0.341_319_38 * s,
+        -0.004_196_086 * l - 0.703_418_6 * m + 1.707_614_7 * s,
+    )
+}
 
+fn oklab_to_rgb(c: Oklab) -> (u8, u8, u8) {
+    let (r, g, b) = oklab_to_linear(c);
     let f = |v: f32| (linear_to_srgb(v).clamp(0.0, 1.0) * 255.0).round() as u8;
     (f(r), f(g), f(b))
+}
+
+fn in_gamut(c: Oklab) -> bool {
+    let (r, g, b) = oklab_to_linear(c);
+    let ok = |v: f32| (-0.001..=1.001).contains(&v);
+    ok(r) && ok(g) && ok(b)
+}
+
+/// Baja el croma hasta que el color cabe en sRGB, conservando tono y luminosidad.
+///
+/// Hace falta en cuanto se empuja el croma. La conversion recorta cada canal por
+/// su cuenta, y eso NO conserva el tono: un morado fuera de gamut sale azul,
+/// porque el canal rojo se recorta y el azul no. Bajar el croma pierde
+/// intensidad, que es un fallo mucho menos visible que cambiar de color.
+fn fit_gamut(c: Oklab) -> Oklab {
+    if in_gamut(c) {
+        return c;
+    }
+    let (mut cabe, mut no_cabe) = (0.0f32, 1.0f32);
+    for _ in 0..14 {
+        let t = (cabe + no_cabe) / 2.0;
+        if in_gamut(Oklab { l: c.l, a: c.a * t, b: c.b * t }) {
+            cabe = t;
+        } else {
+            no_cabe = t;
+        }
+    }
+    Oklab { l: c.l, a: c.a * cabe, b: c.b * cabe }
+}
+
+/// Empuja el croma de un color hasta que se ve como color y no como gris.
+///
+/// # Por que hace falta empujar tanto
+///
+/// Un color vivo tiene croma 0,15-0,25 en Oklab. Pero los centros del k-means
+/// no son colores de la imagen: son PROMEDIOS, y promediar pixeles cancela
+/// color. Un grupo tipico sale con croma 0,02-0,08. Sin empujarlo, la ventana
+/// queda gris por mucho que la portada sea vistosa.
+///
+/// Por debajo del umbral el color es gris de verdad y su tono es ruido de
+/// redondeo: amplificarlo pintaria la ventana de un color inventado.
+fn saturate(c: Oklab) -> Oklab {
+    let chroma = c.chroma();
+    if chroma < 0.012 {
+        return c;
+    }
+    Oklab {
+        l: c.l,
+        a: c.a * (0.19 / chroma).clamp(0.9, 6.0),
+        b: c.b * (0.19 / chroma).clamp(0.9, 6.0),
+    }
 }
 
 fn hex(c: Oklab) -> String {
@@ -197,12 +255,7 @@ pub fn from_pixels(pixels: &[(u8, u8, u8)]) -> Palette {
 /// El croma se empuja hacia un valor fijo: sin esto, las portadas apagadas dan
 /// una malla gris indistinguible del fondo por defecto.
 fn ambient(c: Oklab) -> Oklab {
-    let boost = (0.16 / c.chroma().max(0.01)).clamp(0.85, 2.2);
-    Oklab {
-        l: c.l.clamp(0.42, 0.70),
-        a: c.a * boost,
-        b: c.b * boost,
-    }
+    fit_gamut(Oklab { l: c.l.clamp(0.52, 0.78), ..saturate(c) })
 }
 
 /// Ajusta luminosidad y contraste para que la paleta sea usable como interfaz.
@@ -212,29 +265,16 @@ fn build(stops: Vec<Stop>, dominant: Oklab, accent: Oklab) -> Palette {
     // El fondo se lleva a un rango oscuro fijo. Conserva el tono de la portada
     // (que es lo que da la sensacion de "la app se tinta con la cancion") pero
     // garantiza que el texto claro siempre contraste.
-    let bg = Oklab {
-        l: 0.16,
-        a: dominant.a * 0.55,
-        b: dominant.b * 0.55,
-    };
-    let bg_alt = Oklab {
-        l: 0.24,
-        a: accent.a * 0.45,
-        b: accent.b * 0.45,
-    };
-    // El acento se satura y se sube de luminosidad para que destaque.
-    let chroma = accent.chroma().max(0.02);
-    let boost = (0.16 / chroma).min(2.2);
-    let ac = Oklab {
-        l: 0.72,
-        a: accent.a * boost,
-        b: accent.b * boost,
-    };
-    let fg = Oklab {
-        l: 0.97,
-        a: dominant.a * 0.08,
-        b: dominant.b * 0.08,
-    };
+    // Los cuatro roles parten del croma ya empujado: si no, el acento sale
+    // apagado y el fondo casi neutro, por el mismo motivo que las paradas.
+    let dom = saturate(dominant);
+    let acc = saturate(accent);
+
+    let bg = fit_gamut(Oklab { l: 0.18, a: dom.a * 0.45, b: dom.b * 0.45 });
+    let bg_alt = fit_gamut(Oklab { l: 0.26, a: acc.a * 0.4, b: acc.b * 0.4 });
+    let ac = fit_gamut(Oklab { l: 0.72, a: acc.a, b: acc.b });
+    // El texto solo se tinta un poco: mas y deja de leerse como blanco.
+    let fg = fit_gamut(Oklab { l: 0.97, a: dominant.a * 0.08, b: dominant.b * 0.08 });
 
     Palette {
         stops,
@@ -398,6 +438,68 @@ mod tests {
         for par in p.stops.windows(2) {
             assert!(par[0].weight >= par[1].weight, "paradas desordenadas: {:?}", p.stops);
         }
+    }
+
+    #[test]
+    fn una_portada_apagada_sigue_dando_color() {
+        // El caso que dejaba la ventana gris: una portada de tonos lavados. Los
+        // centros del k-means salen con croma bajisimo y hay que empujarlos.
+        let pixels: Vec<_> = (0..400)
+            .map(|i| (96u8 + (i % 8) as u8, 104u8, 118u8))
+            .collect();
+        let p = from_pixels(&pixels);
+
+        for parada in &p.stops {
+            let (r, g, b) = (
+                u8::from_str_radix(&parada.color[1..3], 16).unwrap() as i32,
+                u8::from_str_radix(&parada.color[3..5], 16).unwrap() as i32,
+                u8::from_str_radix(&parada.color[5..7], 16).unwrap() as i32,
+            );
+            let amplitud = [r, g, b].iter().max().unwrap() - [r, g, b].iter().min().unwrap();
+            assert!(
+                amplitud > 30,
+                "parada casi gris: {} (amplitud {amplitud})",
+                parada.color
+            );
+        }
+    }
+
+    #[test]
+    fn un_gris_de_verdad_no_se_inventa_color() {
+        // Al reves del anterior: si la portada es gris, su tono es ruido de
+        // redondeo. Amplificarlo pintaria la ventana de un color que no existe.
+        let pixels: Vec<_> = (0..200).map(|_| (128u8, 128u8, 128u8)).collect();
+        let p = from_pixels(&pixels);
+
+        for parada in &p.stops {
+            let (r, g, b) = (
+                u8::from_str_radix(&parada.color[1..3], 16).unwrap() as i32,
+                u8::from_str_radix(&parada.color[3..5], 16).unwrap() as i32,
+                u8::from_str_radix(&parada.color[5..7], 16).unwrap() as i32,
+            );
+            let amplitud = [r, g, b].iter().max().unwrap() - [r, g, b].iter().min().unwrap();
+            assert!(amplitud < 12, "gris teñido: {}", parada.color);
+        }
+    }
+
+    #[test]
+    fn ajustar_al_gamut_conserva_el_tono() {
+        // Un morado imposible de pintar. Recortando canales saldria azul; el
+        // ajuste tiene que dejarlo morado y solo bajarle intensidad.
+        let imposible = Oklab { l: 0.6, a: 0.42, b: -0.36 };
+        assert!(!in_gamut(imposible));
+
+        let ajustado = fit_gamut(imposible);
+        assert!(in_gamut(ajustado));
+        assert!(ajustado.chroma() < imposible.chroma());
+
+        let tono = |c: &Oklab| c.b.atan2(c.a);
+        assert!(
+            (tono(&ajustado) - tono(&imposible)).abs() < 0.02,
+            "el tono se movio: {} -> {}",
+            tono(&imposible),
+            tono(&ajustado)
+        );
     }
 
     #[test]

@@ -16,6 +16,7 @@ import {
   setPlayerViewOpen,
   sidebarOpen,
   toggleSidebar,
+  palette,
 } from "../lib/store";
 import * as I from "./Icons";
 
@@ -573,6 +574,67 @@ export function LibraryView() {
   );
 }
 
+/**
+ * La paleta que se está usando ahora mismo.
+ *
+ * Es el equivalente de `probe` para la estética: cuando el fondo salga gris o
+ * de un color raro, aquí se ve si el problema es la portada, el reparto de
+ * colores o la interfaz, sin tener que adivinarlo desde una captura.
+ */
+function PaletteReport() {
+  const p = () => palette();
+  const roles = () =>
+    [
+      ["fondo", p().background],
+      ["fondo alt", p().backgroundAlt],
+      ["acento", p().accent],
+      ["texto", p().foreground],
+    ] as const;
+
+  return (
+    <div class="panel mb-5 px-4 py-3">
+      <div class="mb-2 flex items-baseline justify-between gap-3">
+        <h2 class="text-[15px] font-semibold">Paleta de la portada</h2>
+        <span class="truncate text-[11px] opacity-45">
+          {playback.track?.title ?? "sin pista"}
+        </span>
+      </div>
+
+      <div class="mb-3 flex flex-wrap gap-2">
+        <For each={p().stops}>
+          {(stop) => (
+            <div class="flex items-center gap-2 rounded-lg bg-white/[0.04] px-2 py-1.5">
+              <span
+                class="size-6 shrink-0 rounded ring-1 ring-white/15"
+                style={{ background: stop.color }}
+              />
+              <div class="leading-tight">
+                <div class="font-mono text-[11px]">{stop.color}</div>
+                <div class="text-[10px] opacity-45">{Math.round(stop.weight * 100)}%</div>
+              </div>
+            </div>
+          )}
+        </For>
+      </div>
+
+      <div class="flex flex-wrap gap-3">
+        <For each={roles()}>
+          {([nombre, color]) => (
+            <div class="flex items-center gap-1.5">
+              <span
+                class="size-3.5 shrink-0 rounded ring-1 ring-white/15"
+                style={{ background: color }}
+              />
+              <span class="text-[11px] opacity-55">{nombre}</span>
+              <span class="font-mono text-[11px] opacity-35">{color}</span>
+            </div>
+          )}
+        </For>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------- Diagnostics */
 
 /**
@@ -601,6 +663,8 @@ export function Diagnostics() {
 
   return (
     <div class="scroll-area h-full px-6 py-4">
+      <PaletteReport />
+
       <div class="mb-1 flex items-center justify-between">
         <h2 class="text-[15px] font-semibold">Estado de los clientes</h2>
         <button class="chip px-3 py-1.5 text-[12px]" onClick={run} disabled={running()}>

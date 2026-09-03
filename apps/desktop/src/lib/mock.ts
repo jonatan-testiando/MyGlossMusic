@@ -79,18 +79,19 @@ const health: ClientHealth[] = [
 
 /** Paleta de ejemplo, tomada de una portada violeta/neon como la de la captura. */
 const palette: Palette = {
-  // Tal y como los devolveria `palette.rs` para esta portada: ya pasados por
-  // `ambient()`, no los colores crudos de la imagen.
+  // Calculados con la misma aritmetica que `palette.rs`: luminosidad dentro de
+  // [0.52, 0.78] y croma empujado a 0.19. Si el mock trae colores mas apagados
+  // que los que da el backend, el diseno se ajusta contra una mentira.
   stops: [
-    { color: "#7a4bbf", weight: 0.42 },
-    { color: "#c46ad6", weight: 0.24 },
-    { color: "#5647a8", weight: 0.18 },
-    { color: "#2f95b0", weight: 0.10 },
-    { color: "#d96f9c", weight: 0.06 },
+    { color: "#7f5de0", weight: 0.42 },
+    { color: "#df74e4", weight: 0.24 },
+    { color: "#006ed7", weight: 0.18 },
+    { color: "#00b584", weight: 0.10 },
+    { color: "#f977d3", weight: 0.06 },
   ],
-  background: "#1a1030",
+  background: "#140533",
   backgroundAlt: "#2a1a4a",
-  accent: "#c77dff",
+  accent: "#a88aff",
   foreground: "#f6f0ff",
   isLight: false,
 };
