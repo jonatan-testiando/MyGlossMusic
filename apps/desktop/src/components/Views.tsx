@@ -21,6 +21,9 @@ import {
   playFromResults,
   playWithRadio,
   navegar,
+  playlists,
+  showPlaylist,
+  setCreatingPlaylist,
   browsePage,
   browseLoading,
   openBrowse,
@@ -322,9 +325,7 @@ export function Sidebar() {
         <div class="pt-4 pb-2 px-1">
           <button
             class="flex w-full items-center justify-center gap-2 rounded-full bg-white/10 hover:bg-white/15 active:scale-95 text-xs font-semibold py-2 px-3 text-white transition-all border border-white/10 shadow-sm"
-            onClick={() => {
-              navegar({ view: "library" });
-            }}
+            onClick={() => setCreatingPlaylist(true)}
           >
             <I.Plus size={15} />
             Nueva playlist
@@ -334,9 +335,6 @@ export function Sidebar() {
         <div class="my-2 h-[1px] bg-white/10 mx-2" />
 
         <div class="scroll-area flex-1 px-1 space-y-1 overflow-y-auto">
-          {/* La única playlist que existe de verdad hoy. Las demás llegan
-              cuando haya playlists locales; poner nombres de ejemplo aquí
-              solo hace que la app mienta sobre lo que tiene. */}
           <button
             class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
             onClick={() => {
@@ -349,6 +347,21 @@ export function Sidebar() {
             </div>
             <span class="text-[10.5px] text-white/45 pl-4">Playlist autogenerada</span>
           </button>
+
+          <For each={playlists()}>
+            {(l) => (
+              <button
+                class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
+                onClick={() => showPlaylist(l)}
+                title={l.name}
+              >
+                <span class="truncate text-xs font-medium text-white/85">{l.name}</span>
+                <span class="text-[10.5px] text-white/45">
+                  {l.count} {l.count === 1 ? "canción" : "canciones"}
+                </span>
+              </button>
+            )}
+          </For>
         </div>
 
         <div class="mt-auto space-y-1 px-1 pb-1">

@@ -11,6 +11,11 @@ import {
 import { PlayerBar } from "./components/PlayerBar";
 import { SidePanel } from "./components/SidePanel";
 import { FullScreenLyrics } from "./components/FullScreenLyrics";
+import {
+  AddToPlaylistDialog,
+  CreatePlaylistDialog,
+  PlaylistView,
+} from "./components/Playlists";
 import { Ambient } from "./components/Ambient";
 import {
   initStore,
@@ -20,6 +25,8 @@ import {
   fullLyricsOpen,
   coverUrl,
   coverFallbackUrl,
+  creatingPlaylist,
+  addingTo,
   playerViewOpen,
   setPlayerViewOpen,
 } from "./lib/store";
@@ -138,6 +145,11 @@ export default function App() {
                 <BrowseView />
               </div>
             </Show>
+            <Show when={view() === "playlist"}>
+              <div class="h-full flex-1 overflow-hidden">
+                <PlaylistView />
+              </div>
+            </Show>
             <Show when={view() === "diagnostics"}>
               <div class="flex-1 h-full overflow-hidden p-6">
                 <Diagnostics />
@@ -173,6 +185,16 @@ export default function App() {
       {/* Modal de letras a pantalla completa */}
       <Show when={fullLyricsOpen()}>
         <FullScreenLyrics />
+      </Show>
+
+      {/* Diálogos de playlists. Fuera del `ErrorBoundary` del área principal a
+          propósito: se abren desde cualquier pantalla, incluida la barra de
+          reproducción, así que no pertenecen a ninguna. */}
+      <Show when={creatingPlaylist()}>
+        <CreatePlaylistDialog />
+      </Show>
+      <Show when={addingTo()}>
+        <AddToPlaylistDialog />
       </Show>
     </div>
   );

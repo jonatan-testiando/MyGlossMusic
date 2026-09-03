@@ -303,6 +303,69 @@ fn favorites(state: tauri::State<'_, App>) -> Result<Vec<db::SavedTrack>, String
     state.db.favorites().map_err(|e| e.to_string())
 }
 
+// --------------------------------------------------------------------------
+// Playlists locales
+// --------------------------------------------------------------------------
+
+#[tauri::command]
+fn create_playlist(state: tauri::State<'_, App>, name: String) -> Result<i64, String> {
+    if name.trim().is_empty() {
+        return Err("el nombre no puede estar vacio".into());
+    }
+    state.db.create_playlist(&name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn rename_playlist(state: tauri::State<'_, App>, id: i64, name: String) -> Result<(), String> {
+    if name.trim().is_empty() {
+        return Err("el nombre no puede estar vacio".into());
+    }
+    state.db.rename_playlist(id, &name).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn delete_playlist(state: tauri::State<'_, App>, id: i64) -> Result<(), String> {
+    state.db.delete_playlist(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn playlists(state: tauri::State<'_, App>) -> Result<Vec<db::Playlist>, String> {
+    state.db.playlists().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn playlist_tracks(state: tauri::State<'_, App>, id: i64) -> Result<Vec<db::SavedTrack>, String> {
+    state.db.playlist_tracks(id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn add_to_playlist(
+    state: tauri::State<'_, App>,
+    id: i64,
+    track: TrackInput,
+) -> Result<(), String> {
+    let guardada = db::SavedTrack {
+        video_id: track.video_id,
+        title: track.title.unwrap_or_else(|| "Sin titulo".into()),
+        author: track.author.unwrap_or_else(|| "Desconocido".into()),
+        thumbnail: track.thumbnail,
+        at: 0,
+    };
+    state.db.add_to_playlist(id, &guardada).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn remove_from_playlist(
+    state: tauri::State<'_, App>,
+    id: i64,
+    video_id: String,
+) -> Result<(), String> {
+    state
+        .db
+        .remove_from_playlist(id, &video_id)
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn history(state: tauri::State<'_, App>) -> Result<Vec<db::SavedTrack>, String> {
     state.db.history(100).map_err(|e| e.to_string())
@@ -790,6 +853,13 @@ pub fn run() {
             is_favorite,
             favorites,
             history,
+            create_playlist,
+            rename_playlist,
+            delete_playlist,
+            playlists,
+            playlist_tracks,
+            add_to_playlist,
+            remove_from_playlist,
             diagnose,
             extractor_status,
             window_minimize,

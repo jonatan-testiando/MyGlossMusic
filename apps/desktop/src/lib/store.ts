@@ -10,6 +10,9 @@ import {
   type Palette,
   type PlaybackState,
   type BrowsePage,
+  type Playlist,
+  type SavedTrack,
+  type Track,
   type SearchChip,
   type SearchResult,
   type ShelfItem,
@@ -68,7 +71,7 @@ export const [loadingMore, setLoadingMore] = createSignal(false);
 const [searchOverflow, setSearchOverflow] = createSignal<string | null>(null);
 export const [searching, setSearching] = createSignal(false);
 export const [query, setQuery] = createSignal("");
-export type View = "home" | "search" | "library" | "diagnostics" | "browse";
+export type View = "home" | "search" | "library" | "diagnostics" | "browse" | "playlist";
 
 export const [view, setView] = createSignal<View>("home");
 
@@ -86,6 +89,82 @@ export const [browseLoading, setBrowseLoading] = createSignal(false);
  * vez de una pestaña que no hace nada.
  */
 export const [relatedArtistId, setRelatedArtistId] = createSignal<string | null>(null);
+
+/* --------------------------------------------------------------- Playlists */
+
+export const [playlists, setPlaylists] = createSignal<Playlist[]>([]);
+/** Playlist abierta, con sus pistas. */
+export const [openPlaylist, setOpenPlaylist] = createSignal<
+  { lista: Playlist; tracks: SavedTrack[] } | null
+>(null);
+/** Pista para la que se está eligiendo playlist, o `null` si el diálogo está cerrado. */
+export const [addingTo, setAddingTo] = createSignal<Partial<Track> | null>(null);
+/** `true` mientras se pide un nombre para una playlist nueva. */
+export const [creatingPlaylist, setCreatingPlaylist] = createSignal(false);
+
+export async function refreshPlaylists() {
+  try {
+    setPlaylists(await api.playlists());
+  } catch (e) {
+    console.error("no se pudieron leer las playlists", e);
+  }
+}
+
+export async function createPlaylist(name: string): Promise<number | null> {
+  try {
+    const id = await api.createPlaylist(name);
+    await refreshPlaylists();
+    return id;
+  } catch (e) {
+    console.error("no se pudo crear la playlist", e);
+    return null;
+  }
+}
+
+export async function deletePlaylist(id: number) {
+  try {
+    await api.deletePlaylist(id);
+    // Si estaba abierta, se cierra: dejarla en pantalla mostraría una lista
+    // que ya no existe.
+    if (openPlaylist()?.lista.id === id) setOpenPlaylist(null);
+    await refreshPlaylists();
+  } catch (e) {
+    console.error("no se pudo borrar la playlist", e);
+  }
+}
+
+export async function showPlaylist(lista: Playlist) {
+  navegar({ view: "playlist" });
+  try {
+    setOpenPlaylist({ lista, tracks: await api.playlistTracks(lista.id) });
+  } catch (e) {
+    console.error("no se pudo abrir la playlist", e);
+    setOpenPlaylist({ lista, tracks: [] });
+  }
+}
+
+export async function addTrackToPlaylist(id: number, track: Partial<Track>) {
+  try {
+    await api.addToPlaylist(id, track);
+    await refreshPlaylists();
+    // Si es la que está abierta, se refresca para que la pista aparezca ya.
+    const abierta = openPlaylist();
+    if (abierta?.lista.id === id) showPlaylist(abierta.lista);
+  } catch (e) {
+    console.error("no se pudo anadir a la playlist", e);
+  }
+}
+
+export async function removeTrackFromPlaylist(id: number, videoId: string) {
+  try {
+    await api.removeFromPlaylist(id, videoId);
+    await refreshPlaylists();
+    const abierta = openPlaylist();
+    if (abierta?.lista.id === id) showPlaylist(abierta.lista);
+  } catch (e) {
+    console.error("no se pudo quitar de la playlist", e);
+  }
+}
 
 /**
  * Historial de navegación.
@@ -212,6 +291,7 @@ function adoptQueue(s: PlaybackState): PlaybackState {
 }
 
 export function initStore() {
+  refreshPlaylists();
   api.getState().then((s) => setPlayback(reconcile(adoptQueue(s))));
 
   api.onPlayback((s) => {

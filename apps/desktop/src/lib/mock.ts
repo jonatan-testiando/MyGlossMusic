@@ -8,8 +8,22 @@
  * En la aplicacion real nunca se carga: dentro de Tauri existe
  * `window.__TAURI_INTERNALS__` y `api.ts` usa el backend de verdad.
  */
-import { parseDuration } from "./api";
-import type { ClientHealth, Lyrics, Palette, PlaybackState, SavedTrack, SearchResult, ShelfItem } from "./api";
+import type { ClientHealth, Lyrics, Palette, PlaybackState, Playlist, SavedTrack, SearchResult, ShelfItem, Track } from "./api";
+
+/**
+ * "3:28" a milisegundos.
+ *
+ * Duplica a propósito el `parseDuration` de `api.ts`. Importarlo de allí cierra
+ * un círculo — `api.ts` importa este módulo para elegir entre backend real y
+ * simulado — y según el orden de evaluación revienta con "Cannot access
+ * 'mockApi' before initialization". Los tipos sí se importan, porque las
+ * importaciones de tipo desaparecen al compilar y no crean dependencia.
+ */
+function duracion(texto: string): number | null {
+  const partes = texto.split(":").map(Number);
+  if (partes.length < 2 || partes.some((n) => !Number.isFinite(n))) return null;
+  return partes.reduce((total, n) => total * 60 + n, 0) * 1000;
+}
 
 const COVER = "https://i.ytimg.com/vi/jig2aRZbHm4/maxresdefault.jpg";
 
@@ -28,7 +42,7 @@ const state: PlaybackState = {
     title: TRACKS[0].title,
     author: TRACKS[0].author,
     thumbnail: COVER,
-    durationMs: parseDuration(TRACKS[0].d),
+    durationMs: duracion(TRACKS[0].d),
   },
   playing: true,
   loading: false,
@@ -41,7 +55,7 @@ const state: PlaybackState = {
     title: t.title,
     author: t.author,
     thumbnail: COVER,
-    durationMs: parseDuration(t.d),
+    durationMs: duracion(t.d),
   })),
   queueIndex: 0,
   queueRev: 1,
@@ -51,6 +65,21 @@ const state: PlaybackState = {
 };
 
 const listeners: ((s: PlaybackState) => void)[] = [];
+
+/** Playlists locales de ejemplo, en memoria. */
+const listas: Playlist[] = [{ id: 1, name: "Para programar", count: 2, thumbnail: COVER }];
+const contenidos = new Map<number, SavedTrack[]>([
+  [
+    1,
+    TRACKS.slice(0, 2).map((t) => ({
+      videoId: t.videoId,
+      title: t.title,
+      author: t.author,
+      thumbnail: COVER,
+      at: 0,
+    })),
+  ],
+]);
 const emit = () => listeners.forEach((l) => l({ ...state }));
 
 setInterval(() => {
@@ -294,6 +323,52 @@ export const mockApi = {
   },
   isFavorite: async () => favs.length > 0,
   favorites: async () => favs,
+
+  createPlaylist: async (name: string) => {
+    const id = listas.reduce((max, l) => Math.max(max, l.id), 0) + 1;
+    listas.push({ id, name, count: 0, thumbnail: null });
+    contenidos.set(id, []);
+    return id;
+  },
+  renamePlaylist: async (id: number, name: string) => {
+    const l = listas.find((x) => x.id === id);
+    if (l) l.name = name;
+  },
+  deletePlaylist: async (id: number) => {
+    const i = listas.findIndex((x) => x.id === id);
+    if (i >= 0) listas.splice(i, 1);
+    contenidos.delete(id);
+  },
+  // Copias PROFUNDAS, no la referencia interna. `invoke` de Tauri deserializa
+  // JSON, así que devuelve objetos nuevos en cada llamada. Solid compara por
+  // referencia: si el mock reutilizara los suyos, `For` no volvería a pintar
+  // una fila cuyo contador ha cambiado y el fallo solo aparecería con datos
+  // simulados — que es la peor clase de fallo.
+  playlists: async () => listas.map((l) => ({ ...l })),
+  playlistTracks: async (id: number) => (contenidos.get(id) ?? []).map((t) => ({ ...t })),
+  addToPlaylist: async (id: number, t: Partial<Track>) => {
+    const lista = contenidos.get(id) ?? [];
+    if (lista.some((x) => x.videoId === t.videoId)) return;
+    lista.push({
+      videoId: t.videoId!,
+      title: t.title ?? "Sin título",
+      author: t.author ?? "Desconocido",
+      thumbnail: t.thumbnail ?? null,
+      at: 0,
+    });
+    contenidos.set(id, lista);
+    const l = listas.find((x) => x.id === id);
+    if (l) {
+      l.count = lista.length;
+      l.thumbnail = l.thumbnail ?? t.thumbnail ?? null;
+    }
+  },
+  removeFromPlaylist: async (id: number, videoId: string) => {
+    const lista = (contenidos.get(id) ?? []).filter((x) => x.videoId !== videoId);
+    contenidos.set(id, lista);
+    const l = listas.find((x) => x.id === id);
+    if (l) l.count = lista.length;
+  },
   history: async () => saved,
   diagnose: async () => health,
   extractorStatus: async () => ({ available: true, version: "2026.08.19", program: "yt-dlp.exe (sidecar)" }),

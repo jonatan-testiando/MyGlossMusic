@@ -66,6 +66,14 @@ export interface Stop {
   weight: number;
 }
 
+/** Una playlist local del usuario. */
+export interface Playlist {
+  id: number;
+  name: string;
+  count: number;
+  thumbnail: string | null;
+}
+
 export interface Palette {
   /** Colores de la malla ambiental, del que mas ocupa al que menos. */
   stops: Stop[];
@@ -174,6 +182,17 @@ const realApi = {
   toggleFavorite: () => invoke<boolean>("toggle_favorite"),
   isFavorite: (videoId: string) => invoke<boolean>("is_favorite", { videoId }),
   favorites: () => invoke<SavedTrack[]>("favorites"),
+
+  createPlaylist: (name: string) => invoke<number>("create_playlist", { name }),
+  renamePlaylist: (id: number, name: string) =>
+    invoke<void>("rename_playlist", { id, name }),
+  deletePlaylist: (id: number) => invoke<void>("delete_playlist", { id }),
+  playlists: () => invoke<Playlist[]>("playlists"),
+  playlistTracks: (id: number) => invoke<SavedTrack[]>("playlist_tracks", { id }),
+  addToPlaylist: (id: number, track: Partial<Track>) =>
+    invoke<void>("add_to_playlist", { id, track }),
+  removeFromPlaylist: (id: number, videoId: string) =>
+    invoke<void>("remove_from_playlist", { id, videoId }),
   history: () => invoke<SavedTrack[]>("history"),
   diagnose: () => invoke<ClientHealth[]>("diagnose"),
   extractorStatus: () => invoke<ExtractorStatus>("extractor_status"),

@@ -2,6 +2,7 @@ import { Show, createSignal } from "solid-js";
 import { api, fmtTime, thumbAt } from "../lib/api";
 import { playback, position, isFavorite, toggleFavorite, playerViewOpen, setPlayerViewOpen } from "../lib/store";
 import * as I from "./Icons";
+import { TrackMenu } from "./TrackMenu";
 
 /** Barra de reproducción inferior de extremo a extremo estilo glassy-music (7.webp / 9.mp4). */
 export function PlayerBar() {
@@ -144,12 +145,7 @@ export function PlayerBar() {
             >
               <I.ThumbsUp size={16} />
             </button>
-            <button
-              class="icon-btn size-8 text-white/60 hover:text-white"
-              title="Más acciones"
-            >
-              <I.More size={16} />
-            </button>
+            <TrackMenu track={playback.track!} />
           </div>
         </Show>
       </div>

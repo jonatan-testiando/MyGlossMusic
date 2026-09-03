@@ -10,6 +10,7 @@ import {
   openBrowse,
 } from "../lib/store";
 import * as I from "./Icons";
+import { TrackMenu } from "./TrackMenu";
 
 /** Panel derecho flotante de cristal escarchado idéntico a Image 2. */
 type TabId = "queue" | "lyrics" | "comments" | "similar";
@@ -220,15 +221,7 @@ function QueueView() {
                     <span class="text-xs tabular-nums font-medium text-white/60">
                       {trackDuration(t, isCurrent())}
                     </span>
-                    <button
-                      class="icon-btn size-7 text-white/40 group-hover:text-white/80 hover:!bg-white/10"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                      }}
-                      title="Más opciones"
-                    >
-                      <I.More size={15} />
-                    </button>
+                    <TrackMenu track={t} />
                   </div>
                 </div>
               );
