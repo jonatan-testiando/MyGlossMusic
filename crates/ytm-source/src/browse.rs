@@ -263,7 +263,7 @@ fn parse_card(r: &Value) -> Option<ShelfItem> {
 }
 
 /// Fila: miniatura y columnas de texto. Mismo formato que la busqueda.
-fn parse_row(r: &Value) -> Option<ShelfItem> {
+pub(crate) fn parse_row(r: &Value) -> Option<ShelfItem> {
     let columns = flex_column_texts(r);
     let title = columns.first()?.clone();
     if title.is_empty() {
@@ -293,7 +293,7 @@ fn parse_row(r: &Value) -> Option<ShelfItem> {
 }
 
 /// Adonde lleva un endpoint: a reproducir algo, o a otra pagina.
-fn target(endpoint: &Value) -> Option<(ItemKind, String)> {
+pub(crate) fn target(endpoint: &Value) -> Option<(ItemKind, String)> {
     if let Some(id) = endpoint
         .get("watchEndpoint")
         .and_then(|w| w.get("videoId"))

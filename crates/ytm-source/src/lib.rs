@@ -20,7 +20,7 @@ pub use innertube::{Attestation, InnerTube};
 pub use model::{Format, PlayerResponse};
 pub use playlist::{parse_input, Input, Playlist};
 pub use radio::Radio;
-pub use search::{Filter, SearchResult};
+pub use search::{Filter, SearchChip, SearchPage, SearchResult};
 
 use anyhow::{bail, Result};
 

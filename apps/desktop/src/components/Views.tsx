@@ -21,6 +21,12 @@ import {
   resultsLabel,
   playFromResults,
   playWithRadio,
+  searchChips,
+  searchFilter,
+  searchMoreToken,
+  applySearchFilter,
+  loadMoreResults,
+  loadingMore,
   playSaved,
   playerViewOpen,
   setPlayerViewOpen,
@@ -607,29 +613,85 @@ export function HomeFeed() {
 
 /* ------------------------------------------------------------ Search results */
 
+/** Cuánto antes del final se empieza a pedir la página siguiente, en píxeles. */
+const MARGEN_CARGA = 600;
+
+/** Etiqueta legible del tipo de un resultado. */
+const TIPO: Record<ShelfItem["kind"], string> = {
+  track: "Canción",
+  album: "Álbum",
+  artist: "Artista",
+  playlist: "Lista",
+};
+
 export function SearchView() {
-  const searchChips = ["Songs", "Videos", "Featured playlists", "Albums", "Artists", "Community playlists", "Episodes", "Podcasts"];
-  const [activeChip, setActiveChip] = createSignal("Songs");
+  let fondo!: HTMLDivElement;
+
+  /** ¿El final de la lista está a la vista (o casi)? */
+  const finalALaVista = () =>
+    fondo.getBoundingClientRect().top < window.innerHeight + MARGEN_CARGA;
+
+  // Carga infinita. `IntersectionObserver` y no el evento `scroll` porque el
+  // evento dispara decenas de veces por gesto y habría que frenarlo a mano.
+  onMount(() => {
+    const obs = new IntersectionObserver(
+      (entradas) => {
+        if (entradas.some((e) => e.isIntersecting)) loadMoreResults();
+      },
+      { root: fondo.closest(".scroll-area"), rootMargin: `${MARGEN_CARGA}px` },
+    );
+    obs.observe(fondo);
+    onCleanup(() => obs.disconnect());
+  });
+
+  // El observador solo avisa de CAMBIOS de visibilidad. Cuando los resultados
+  // caben en pantalla, el centinela ya está a la vista antes de que exista el
+  // token, así que la única notificación llega demasiado pronto y no vuelve a
+  // haber otra: la lista se queda corta para siempre. Este efecto cubre ese
+  // caso — si al llegar un token nuevo el final sigue a la vista, se pide ya.
+  createEffect(() => {
+    if (searchMoreToken() && !loadingMore() && finalALaVista()) loadMoreResults();
+  });
+
+  const abrir = (item: ShelfItem, i: number) => {
+    if (item.kind === "track") playFromResults(i);
+    else if (item.kind === "playlist") runSearch(item.id.replace(/^VL/, ""));
+    // Artistas y álbumes: pendientes de sus pantallas.
+  };
 
   return (
-    <div class="scroll-area h-full px-8 py-6 space-y-5">
-      {/* Selector de chips estilo 6.webp */}
-      <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
-        <For each={searchChips}>
-          {(c) => (
-            <button
-              class="shrink-0 rounded-full px-3.5 py-1 text-xs font-semibold transition-all border"
-              classList={{
-                "bg-white/20 border-white/25 text-white shadow-sm": activeChip() === c,
-                "bg-white/[0.04] border-white/10 text-white/60 hover:text-white hover:bg-white/10": activeChip() !== c,
-              }}
-              onClick={() => setActiveChip(c)}
-            >
-              {c}
-            </button>
-          )}
-        </For>
-      </div>
+    <div class="scroll-area h-full space-y-5 px-8 py-6">
+      {/* Los filtros vienen de YouTube en la propia respuesta. */}
+      <Show when={searchChips().length > 0}>
+        <div class="scrollbar-none flex items-center gap-2 overflow-x-auto pb-1">
+          <button
+            class="shrink-0 rounded-full border px-3.5 py-1 text-xs font-semibold transition-all"
+            classList={{
+              "bg-white/20 border-white/25 text-white shadow-sm": searchFilter() === null,
+              "bg-white/[0.04] border-white/10 text-white/60 hover:bg-white/10 hover:text-white":
+                searchFilter() !== null,
+            }}
+            onClick={() => applySearchFilter(null)}
+          >
+            Todo
+          </button>
+          <For each={searchChips()}>
+            {(c) => (
+              <button
+                class="shrink-0 rounded-full border px-3.5 py-1 text-xs font-semibold transition-all"
+                classList={{
+                  "bg-white/20 border-white/25 text-white shadow-sm": searchFilter() === c.params,
+                  "bg-white/[0.04] border-white/10 text-white/60 hover:bg-white/10 hover:text-white":
+                    searchFilter() !== c.params,
+                }}
+                onClick={() => applySearchFilter(c.params)}
+              >
+                {c.label}
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
 
       <Show when={!searching()} fallback={<SkeletonList />}>
         <Show
@@ -643,50 +705,66 @@ export function SearchView() {
           <Show when={resultsLabel()}>
             <div class="mb-3 flex items-center justify-between gap-3">
               <h2 class="min-w-0 truncate text-base font-bold text-white">{resultsLabel()}</h2>
-              <button class="rounded-full bg-white/10 hover:bg-white/15 px-4 py-1.5 text-xs font-semibold text-white border border-white/10" onClick={() => playFromResults(0)}>
+              <button
+                class="rounded-full border border-white/10 bg-white/10 px-4 py-1.5 text-xs font-semibold text-white hover:bg-white/15"
+                onClick={() => playFromResults(0)}
+              >
                 Reproducir todo
               </button>
             </div>
           </Show>
+
           <div class="fade-in flex flex-col gap-1">
             <For each={results()}>
               {(r, i) => {
-                const active = () => playback.track?.videoId === r.videoId;
+                const activo = () => r.kind === "track" && playback.track?.videoId === r.id;
                 return (
                   <button
-                    class="group flex items-center gap-3.5 rounded-xl px-3.5 py-2.5 text-left transition-all border border-transparent"
+                    class="group flex items-center gap-3.5 rounded-xl border border-transparent px-3.5 py-2.5 text-left transition-all"
                     classList={{
-                      "bg-white/[0.14] border-white/10 shadow-sm": active(),
-                      "hover:bg-white/[0.06] hover:border-white/5": !active(),
+                      "bg-white/[0.14] border-white/10 shadow-sm": activo(),
+                      "hover:border-white/5 hover:bg-white/[0.06]": !activo(),
                     }}
-                    onDblClick={() => playFromResults(i())}
-                    onClick={() => playFromResults(i())}
+                    onClick={() => abrir(r, i())}
                   >
-                    <div class="relative shrink-0 size-11 rounded-lg overflow-hidden ring-1 ring-white/10 shadow-sm">
-                      <Show
-                        when={r.thumbnail}
-                        fallback={<div class="size-full bg-white/8" />}
-                      >
-                        <img
-                          src={thumbAt(r.thumbnail, 96)!}
-                          alt=""
-                          class="size-full object-cover"
-                        />
+                    <div
+                      class="relative size-11 shrink-0 overflow-hidden shadow-sm ring-1 ring-white/10"
+                      classList={{
+                        // Los artistas se pintan redondos, como en YouTube Music.
+                        "rounded-full": r.kind === "artist",
+                        "rounded-lg": r.kind !== "artist",
+                      }}
+                    >
+                      <Show when={r.thumbnail} fallback={<div class="size-full bg-white/8" />}>
+                        <img src={thumbAt(r.thumbnail, 96)!} alt="" class="size-full object-cover" />
                       </Show>
-                      <div class="absolute inset-0 grid place-items-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
-                        <I.Play size={16} class="text-white" />
-                      </div>
+                      <Show when={r.kind === "track"}>
+                        <div class="absolute inset-0 grid place-items-center bg-black/45 opacity-0 transition-opacity group-hover:opacity-100">
+                          <I.Play size={16} class="text-white" />
+                        </div>
+                      </Show>
                     </div>
+
                     <div class="min-w-0 flex-1">
                       <div
                         class="truncate text-sm font-semibold text-white"
-                        classList={{ "text-[var(--accent)]": active() }}
+                        classList={{ "text-[var(--accent)]": activo() }}
                       >
                         {r.title}
                       </div>
-                      <div class="truncate text-xs text-white/60 font-medium mt-0.5">{r.subtitle}</div>
+                      <div class="mt-0.5 flex items-center gap-1.5 text-xs font-medium text-white/60">
+                        {/* El tipo va delante, como en YouTube Music: es lo que
+                            deja ver de un vistazo que la lista trae de todo. */}
+                        <Show when={r.kind !== "track"}>
+                          <span class="shrink-0 rounded bg-white/10 px-1.5 py-px text-[10px] uppercase tracking-wide text-white/70">
+                            {TIPO[r.kind]}
+                          </span>
+                        </Show>
+                        <span class="truncate">{r.subtitle}</span>
+                      </div>
                     </div>
-                    <span class="shrink-0 text-xs tabular-nums text-white/50 font-medium">
+
+                    <span class="shrink-0 text-xs font-medium tabular-nums text-white/50">
                       {r.duration ?? ""}
                     </span>
                   </button>
@@ -695,6 +773,14 @@ export function SearchView() {
             </For>
           </div>
         </Show>
+      </Show>
+
+      {/* Centinela de la carga infinita. Va siempre, aunque no haya token: si
+          apareciera y desapareciera, el observador se quedaría sin nada que
+          mirar justo cuando llega la siguiente página. */}
+      <div ref={fondo} class="h-px" />
+      <Show when={loadingMore()}>
+        <p class="py-4 text-center text-xs text-white/40">Cargando más…</p>
       </Show>
     </div>
   );
@@ -705,10 +791,7 @@ function SkeletonList() {
     <div class="flex flex-col gap-0.5">
       <For each={Array(8).fill(0)}>
         {(_, i) => (
-          <div
-            class="flex items-center gap-3 px-3 py-2"
-            style={{ opacity: String(1 - i() * 0.1) }}
-          >
+          <div class="flex items-center gap-3 px-3 py-2" style={{ opacity: String(1 - i() * 0.1) }}>
             <div class="size-11 shrink-0 animate-pulse rounded-lg bg-white/8" />
             <div class="flex-1">
               <div class="h-3 w-2/5 animate-pulse rounded bg-white/8" />

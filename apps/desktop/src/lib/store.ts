@@ -1,6 +1,18 @@
 import { createSignal, createEffect, on } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
-import { api, parseDuration, thumbAt, thumbUrl, thumbFallback, type PlaybackState, type Palette, type SearchResult, type Lyrics } from "./api";
+import {
+  api,
+  parseDuration,
+  thumbAt,
+  thumbUrl,
+  thumbFallback,
+  type Lyrics,
+  type Palette,
+  type PlaybackState,
+  type SearchChip,
+  type SearchResult,
+  type ShelfItem,
+} from "./api";
 
 const EMPTY_STATE: PlaybackState = {
   track: null,
@@ -33,7 +45,14 @@ const DEFAULT_PALETTE: Palette = {
 
 export const [playback, setPlayback] = createStore<PlaybackState>(EMPTY_STATE);
 export const [palette, setPalette] = createSignal<Palette>(DEFAULT_PALETTE);
-export const [results, setResults] = createSignal<SearchResult[]>([]);
+export const [results, setResults] = createSignal<ShelfItem[]>([]);
+/** Los filtros que ofrece YouTube para la búsqueda actual. */
+export const [searchChips, setSearchChips] = createSignal<SearchChip[]>([]);
+/** Filtro activo. `null` es "todo mezclado". */
+export const [searchFilter, setSearchFilter] = createSignal<string | null>(null);
+/** Token de la siguiente página, o `null` si ya no hay más. */
+export const [searchMoreToken, setSearchMoreToken] = createSignal<string | null>(null);
+export const [loadingMore, setLoadingMore] = createSignal(false);
 export const [searching, setSearching] = createSignal(false);
 export const [query, setQuery] = createSignal("");
 export const [view, setView] = createSignal<"home" | "search" | "library" | "diagnostics">("home");
@@ -237,20 +256,28 @@ export async function runSearch(q: string) {
   setSearching(true);
   setView("search");
   setResultsLabel(null);
+  setSearchFilter(null);
+  setSearchMoreToken(null);
   try {
     if (c.kind === "playlist") {
       const p = await api.playlist(c.value);
-      setResults(p.tracks);
+      setResults(p.tracks.map(fromSearchResult));
+      setSearchChips([]);
       setResultsLabel(`${p.title ?? "Playlist"} \u2022 ${p.tracks.length} pistas`);
     } else {
       // Sin filtrar por "solo canciones": ese filtro mira unicamente la
       // pestania Songs del catalogo y deja fuera videos, subidas de usuario,
       // directos y remixes, que es justo lo que no se encontraba.
-      setResults(await api.search(c.value, false));
+      const page = await api.search(c.value);
+      setResults(page.items);
+      // Los filtros los define YouTube en la respuesta, no nosotros.
+      setSearchChips(page.chips);
+      setSearchMoreToken(page.continuation);
     }
   } catch (e) {
     console.error("busqueda fallida", e);
     setResults([]);
+    setSearchChips([]);
   } finally {
     setSearching(false);
   }
@@ -294,10 +321,67 @@ export async function playWithRadio(track: SearchResult) {
 
 /** Reproduce un resultado y encola su radio. */
 export function playFromResults(index: number) {
-  const list = results();
-  const elegido = list[index];
-  if (!elegido) return;
-  playWithRadio(elegido);
+  const elegido = results()[index];
+  if (!elegido || elegido.kind !== "track") return;
+  playWithRadio({
+    videoId: elegido.id,
+    title: elegido.title,
+    subtitle: elegido.subtitle,
+    duration: elegido.duration,
+    thumbnail: elegido.thumbnail,
+  });
+}
+
+/** Aplica uno de los filtros que ofrece YouTube, o los quita todos. */
+export async function applySearchFilter(params: string | null) {
+  const q = query().trim();
+  if (!q) return;
+  setSearchFilter(params);
+  setSearching(true);
+  setSearchMoreToken(null);
+  try {
+    const page = await api.search(q, params ?? undefined);
+    setResults(page.items);
+    // Al filtrar, YouTube devuelve los chips otra vez; si vinieran vacíos se
+    // conservan los que había, para no dejar la fila en blanco.
+    if (page.chips.length) setSearchChips(page.chips);
+    setSearchMoreToken(page.continuation);
+  } catch (e) {
+    console.error("no se pudo filtrar", e);
+  } finally {
+    setSearching(false);
+  }
+}
+
+/** Siguiente página de resultados, si la hay. */
+export async function loadMoreResults() {
+  const token = searchMoreToken();
+  if (!token || loadingMore()) return;
+  setLoadingMore(true);
+  try {
+    const page = await api.searchMore(token);
+    // Se anexa, no se sustituye: es paginación, no una búsqueda nueva.
+    setResults([...results(), ...page.items]);
+    setSearchMoreToken(page.continuation);
+  } catch (e) {
+    console.error("no se pudieron cargar mas resultados", e);
+    // Sin token no se reintenta en bucle contra un servidor que ya dijo que no.
+    setSearchMoreToken(null);
+  } finally {
+    setLoadingMore(false);
+  }
+}
+
+/** Una pista de playlist o de radio, con la forma común de la interfaz. */
+function fromSearchResult(r: SearchResult): ShelfItem {
+  return {
+    kind: "track",
+    id: r.videoId,
+    title: r.title,
+    subtitle: r.subtitle,
+    thumbnail: r.thumbnail,
+    duration: r.duration,
+  };
 }
 
 /** Portada grande de la pista actual. */

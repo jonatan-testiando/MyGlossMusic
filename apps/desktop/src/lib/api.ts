@@ -101,6 +101,18 @@ export interface BrowsePage {
   shelves: Shelf[];
 }
 
+/** Un filtro del buscador, tal y como lo ofrece YouTube. */
+export interface SearchChip {
+  label: string;
+  params: string;
+}
+
+export interface SearchPage {
+  items: ShelfItem[];
+  chips: SearchChip[];
+  continuation: string | null;
+}
+
 export interface Radio {
   playlistId: string | null;
   tracks: SearchResult[];
@@ -125,8 +137,10 @@ export interface ClientHealth {
 }
 
 const realApi = {
-  search: (query: string, onlySongs = true) =>
-    invoke<SearchResult[]>("search", { query, onlySongs }),
+  search: (query: string, params?: string) =>
+    invoke<SearchPage>("search", { query, params }),
+  searchMore: (continuation: string) =>
+    invoke<SearchPage>("search_more", { continuation }),
 
   searchSuggestions: (query: string) =>
     invoke<string[]>("search_suggestions", { query }),

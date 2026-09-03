@@ -18,7 +18,7 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 use ytm_audio::{Command, Engine, PlaybackState, Repeat};
-use ytm_source::{Filter, InnerTube, SearchResult, TrackInfo};
+use ytm_source::{InnerTube, SearchPage, TrackInfo};
 
 /// Estado global de la aplicacion.
 struct App {
@@ -37,20 +37,32 @@ struct App {
 // Busqueda y biblioteca
 // --------------------------------------------------------------------------
 
+/// Busca, y devuelve TODO: canciones, videos, artistas, albumes y playlists.
+///
+/// `params` sale de los filtros que trae la propia respuesta, no de una tabla
+/// codificada aqui. Sin `params`, la busqueda es "todo mezclado".
 #[tauri::command]
 async fn search(
     state: tauri::State<'_, App>,
     query: String,
-    only_songs: bool,
-) -> Result<Vec<SearchResult>, String> {
-    // `Filter::Songs` mira solo la pestania "Songs" del catalogo: deja fuera
-    // videos, subidas de usuario, directos y remixes sin catalogar. Es decir,
-    // buena parte de lo que la gente busca. Por eso el valor por defecto de la
-    // interfaz es `false` y esto solo se activa cuando se pide expresamente.
-    let filter = if only_songs { Filter::Songs } else { Filter::All };
+    params: Option<String>,
+) -> Result<SearchPage, String> {
     state
         .innertube
-        .search(&query, filter)
+        .search_page(&query, params.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Siguiente pagina de resultados.
+#[tauri::command]
+async fn search_more(
+    state: tauri::State<'_, App>,
+    continuation: String,
+) -> Result<SearchPage, String> {
+    state
+        .innertube
+        .search_more(&continuation)
         .await
         .map_err(|e| e.to_string())
 }
@@ -753,6 +765,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             search,
+            search_more,
             search_suggestions,
             radio,
             set_up_next,

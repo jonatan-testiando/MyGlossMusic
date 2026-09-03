@@ -9,7 +9,7 @@
  * `window.__TAURI_INTERNALS__` y `api.ts` usa el backend de verdad.
  */
 import { parseDuration } from "./api";
-import type { ClientHealth, Lyrics, Palette, PlaybackState, SavedTrack, SearchResult } from "./api";
+import type { ClientHealth, Lyrics, Palette, PlaybackState, SavedTrack, SearchResult, ShelfItem } from "./api";
 
 const COVER = "https://i.ytimg.com/vi/jig2aRZbHm4/maxresdefault.jpg";
 
@@ -126,7 +126,6 @@ const saved: SavedTrack[] = TRACKS.slice(0, 4).map((t, i) => ({
 let favs: SavedTrack[] = saved.slice(0, 2);
 
 export const mockApi = {
-  search: async (_q: string) => results,
   playlist: async () => ({ title: "Playlist de prueba", tracks: results }),
   playQueue: async (_t: unknown[], start: number) => {
     state.queueIndex = start;
@@ -174,6 +173,44 @@ export const mockApi = {
     emit();
   },
   getState: async () => ({ ...state }),
+  search: async (_q: string, params?: string) => ({
+    items: (TRACKS.map((t) => ({
+      kind: "track" as const,
+      id: t.videoId,
+      title: t.title,
+      subtitle: t.author,
+      thumbnail: COVER,
+      duration: t.d,
+    })) as ShelfItem[]).concat(
+      params
+        ? []
+        : [
+            { kind: "artist" as const, id: "UC1", title: "Kastra", subtitle: "Artista", thumbnail: COVER, duration: null },
+            { kind: "album" as const, id: "MPREb_1", title: "Fool For You", subtitle: "Single • Kastra", thumbnail: COVER, duration: null },
+            { kind: "playlist" as const, id: "VLPL1", title: "Kastra Mix", subtitle: "Lista • 1,2 M", thumbnail: COVER, duration: null },
+          ],
+    ),
+    chips: [
+      { label: "Canciones", params: "p-canciones" },
+      { label: "Vídeos", params: "p-videos" },
+      { label: "Artistas", params: "p-artistas" },
+      { label: "Álbumes", params: "p-albumes" },
+    ],
+    continuation: params ? "token-mock" : null,
+  }),
+  searchMore: async () => ({
+    items: TRACKS.slice(0, 3).map((t) => ({
+      kind: "track" as const,
+      id: `${t.videoId}-2`,
+      title: `${t.title} (más)`,
+      subtitle: t.author,
+      thumbnail: COVER,
+      duration: t.d,
+    })),
+    chips: [],
+    continuation: null,
+  }),
+
   home: async () => ({
     title: null,
     subtitle: null,

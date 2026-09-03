@@ -95,7 +95,100 @@ impl InnerTube {
     }
 }
 
+/// Un filtro del buscador, tal y como lo ofrece YouTube.
+///
+/// Los `params` NO se escriben a mano: vienen en la propia respuesta. Antes
+/// habia tres codificados en el binario y los otros cinco no existian; en
+/// cuanto YouTube cambie uno, esto se entera solo.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchChip {
+    pub label: String,
+    pub params: String,
+}
+
+/// Una pagina de resultados.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchPage {
+    /// Canciones, videos, artistas, albumes y playlists, mezclados y en orden.
+    pub items: Vec<crate::browse::ShelfItem>,
+    /// Los filtros que ofrece YouTube para esta busqueda.
+    pub chips: Vec<SearchChip>,
+    /// Token para pedir la siguiente pagina, si la hay.
+    pub continuation: Option<String>,
+}
+
 impl InnerTube {
+    /// Busca en YouTube Music devolviendo TODO lo que encuentra.
+    ///
+    /// A diferencia de [`Self::search`], no se queda solo con lo que tiene
+    /// `videoId`. Medido sobre una busqueda real: de 32 filas que manda
+    /// YouTube, quedarse con las reproducibles dejaba 15 — el resto son
+    /// artistas, albumes y playlists, que es justo lo que hace que un buscador
+    /// parezca completo.
+    pub async fn search_page(&self, query: &str, params: Option<&str>) -> Result<SearchPage> {
+        let mut body = json!({
+            "context": {
+                "client": {
+                    "clientName": WEB_REMIX.client_name,
+                    "clientVersion": WEB_REMIX.client_version,
+                    "hl": "es",
+                    "gl": "US",
+                }
+            },
+            "query": query,
+        });
+        if let Some(p) = params {
+            body["params"] = json!(p);
+        }
+        let json = self.post_search(SEARCH_URL.to_string(), body).await?;
+        Ok(parse_search_page(&json))
+    }
+
+    /// Siguiente pagina de resultados.
+    ///
+    /// La continuacion viaja en la QUERY, no en el cuerpo: este endpoint usa el
+    /// formato antiguo, y mandarla en el JSON devuelve la primera pagina otra
+    /// vez sin dar error, que es peor que fallar.
+    pub async fn search_more(&self, continuation: &str) -> Result<SearchPage> {
+        let url = format!(
+            "{SEARCH_URL}?ctoken={c}&continuation={c}&type=next",
+            c = continuation
+        );
+        let body = json!({
+            "context": {
+                "client": {
+                    "clientName": WEB_REMIX.client_name,
+                    "clientVersion": WEB_REMIX.client_version,
+                    "hl": "es",
+                    "gl": "US",
+                }
+            }
+        });
+        let json = self.post_search(url, body).await?;
+        Ok(parse_search_page(&json))
+    }
+
+    async fn post_search(&self, url: String, body: Value) -> Result<Value> {
+        let res = self
+            .http_ref()
+            .post(&url)
+            .header("User-Agent", WEB_REMIX.user_agent)
+            .header("X-YouTube-Client-Name", WEB_REMIX.client_name_id.to_string())
+            .header("X-YouTube-Client-Version", WEB_REMIX.client_version)
+            .header("Content-Type", "application/json")
+            .header("Origin", "https://music.youtube.com")
+            .header("Referer", "https://music.youtube.com/")
+            .json(&body)
+            .send()
+            .await
+            .context("fallo la peticion de busqueda")?
+            .error_for_status()
+            .context("el servidor rechazo la busqueda")?;
+        res.json().await.context("respuesta de busqueda ilegible")
+    }
+
     /// Sugerencias mientras se escribe, como el desplegable de YouTube Music.
     ///
     /// Es un endpoint distinto del de busqueda y mucho mas barato: devuelve solo
@@ -158,6 +251,70 @@ pub fn parse_suggestions(root: &Value) -> Vec<String> {
         }
     }
     out
+}
+
+/// Normaliza una pagina de busqueda sin depender de la forma del arbol.
+pub fn parse_search_page(root: &Value) -> SearchPage {
+    let mut rows = Vec::new();
+    collect_by_key(root, "musicResponsiveListItemRenderer", &mut rows);
+
+    let mut items = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for r in rows {
+        if let Some(item) = crate::browse::parse_row(r) {
+            if seen.insert((item.kind, item.id.clone())) {
+                items.push(item);
+            }
+        }
+    }
+
+    SearchPage { items, chips: parse_chips(root), continuation: parse_continuation(root) }
+}
+
+/// Los filtros que ofrece YouTube, con sus `params`.
+fn parse_chips(root: &Value) -> Vec<SearchChip> {
+    let mut nodes = Vec::new();
+    collect_by_key(root, "chipCloudChipRenderer", &mut nodes);
+
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for c in nodes {
+        let label = runs_text(c.get("text"));
+        let params = c
+            .get("navigationEndpoint")
+            .and_then(|e| e.get("searchEndpoint"))
+            .and_then(|e| e.get("params"))
+            .and_then(Value::as_str);
+        if let (false, Some(params)) = (label.is_empty(), params) {
+            if seen.insert(params.to_string()) {
+                out.push(SearchChip { label, params: params.to_string() });
+            }
+        }
+    }
+    out
+}
+
+/// Token de la siguiente pagina.
+///
+/// YouTube usa dos formatos segun el endpoint y la version, asi que se miran
+/// los dos: el nuevo lo cuelga de `continuationEndpoint`, el viejo de
+/// `nextContinuationData`.
+fn parse_continuation(root: &Value) -> Option<String> {
+    let mut viejo = Vec::new();
+    collect_by_key(root, "nextContinuationData", &mut viejo);
+    if let Some(t) = viejo
+        .iter()
+        .find_map(|n| n.get("continuation").and_then(Value::as_str))
+    {
+        return Some(t.to_string());
+    }
+
+    let mut nuevo = Vec::new();
+    collect_by_key(root, "continuationItemRenderer", &mut nuevo);
+    nuevo
+        .iter()
+        .find_map(|n| find_str(n, "token"))
+        .map(str::to_string)
 }
 
 /// Extrae los resultados sin depender de la forma del arbol.
@@ -345,6 +502,77 @@ mod tests {
         assert_eq!(out[0].duration.as_deref(), Some("3:45"));
         assert_eq!(out[0].subtitle, "Artista \u{2022} Album");
         assert_eq!(out[0].thumbnail.as_deref(), Some("https://ejemplo/grande.jpg"));
+    }
+
+    #[test]
+    fn la_busqueda_conserva_artistas_albumes_y_playlists() {
+        // Es el fallo que veia Alejandro: solo salian 10 resultados. De 32 filas
+        // que manda YouTube nos quedabamos con las 15 reproducibles, y el resto
+        // — que es lo que hace que un buscador parezca completo — se tiraba.
+        let payload = json!({ "contents": [
+            { "musicResponsiveListItemRenderer": {
+                "playlistItemData": { "videoId": "abcdefghijk" },
+                "flexColumns": [
+                    { "musicResponsiveListItemFlexColumnRenderer":
+                        { "text": { "runs": [{ "text": "Una Cancion" }] } } },
+                    { "musicResponsiveListItemFlexColumnRenderer":
+                        { "text": { "runs": [{ "text": "Artista \u{2022} 3:45" }] } } }
+                ]
+            }},
+            { "musicResponsiveListItemRenderer": {
+                "flexColumns": [{ "musicResponsiveListItemFlexColumnRenderer":
+                    { "text": { "runs": [{ "text": "Un Artista" }] } } }],
+                "navigationEndpoint": { "browseEndpoint": {
+                    "browseId": "UC12345",
+                    "browseEndpointContextSupportedConfigs": {
+                        "browseEndpointContextMusicConfig": { "pageType": "MUSIC_PAGE_TYPE_ARTIST" }
+                    }
+                }}
+            }}
+        ]});
+
+        let page = parse_search_page(&payload);
+        assert_eq!(page.items.len(), 2, "se perdio una fila");
+        assert_eq!(page.items[0].kind, crate::browse::ItemKind::Track);
+        assert_eq!(page.items[0].duration.as_deref(), Some("3:45"));
+        assert_eq!(page.items[1].kind, crate::browse::ItemKind::Artist);
+        assert_eq!(page.items[1].id, "UC12345");
+    }
+
+    #[test]
+    fn los_filtros_salen_de_la_respuesta_no_del_binario() {
+        let payload = json!({ "header": { "chips": [
+            { "chipCloudChipRenderer": {
+                "text": { "runs": [{ "text": "Canciones" }] },
+                "navigationEndpoint": { "searchEndpoint": { "params": "EgWKAQIIAQ%3D%3D" } }
+            }},
+            { "chipCloudChipRenderer": {
+                "text": { "runs": [{ "text": "Artistas" }] },
+                "navigationEndpoint": { "searchEndpoint": { "params": "EgWKAQIgAQ%3D%3D" } }
+            }}
+        ]}});
+        let chips = parse_search_page(&payload).chips;
+        assert_eq!(chips.len(), 2);
+        assert_eq!(chips[0].label, "Canciones");
+        assert_eq!(chips[0].params, "EgWKAQIIAQ%3D%3D");
+    }
+
+    #[test]
+    fn entiende_los_dos_formatos_de_continuacion() {
+        let viejo = json!({ "continuations": [
+            { "nextContinuationData": { "continuation": "TOKEN_VIEJO" } }
+        ]});
+        assert_eq!(parse_search_page(&viejo).continuation.as_deref(), Some("TOKEN_VIEJO"));
+
+        let nuevo = json!({ "contents": [
+            { "continuationItemRenderer": { "continuationEndpoint": {
+                "continuationCommand": { "token": "TOKEN_NUEVO" }
+            }}}
+        ]});
+        assert_eq!(parse_search_page(&nuevo).continuation.as_deref(), Some("TOKEN_NUEVO"));
+
+        let sin = json!({ "contents": [] });
+        assert!(parse_search_page(&sin).continuation.is_none());
     }
 
     #[test]
