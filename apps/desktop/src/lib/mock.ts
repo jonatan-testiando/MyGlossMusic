@@ -31,6 +31,7 @@ const state: PlaybackState = {
   buffered: 1,
   queue: TRACKS.map((t) => ({ videoId: t.videoId, title: t.title, author: t.author, thumbnail: COVER })),
   queueIndex: 0,
+  queueRev: 1,
   repeat: "off",
   shuffle: false,
   error: null,

@@ -28,6 +28,8 @@ export interface PlaybackState {
   volume: number;
   buffered: number;
   queue: Track[];
+  /** Sube cuando el contenido de la cola cambia; si no sube, `queue` llega vacia y se conserva la anterior. */
+  queueRev: number;
   queueIndex: number;
   repeat: Repeat;
   shuffle: boolean;

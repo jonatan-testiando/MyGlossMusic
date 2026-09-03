@@ -550,15 +550,55 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 let mut last_track: Option<String> = None;
                 let mut last_prefs = (f32::NAN, String::new(), false);
+                let mut last_sent_rev: Option<u64> = None;
+                let mut last_media = (String::new(), false);
+                let mut last_media_push = std::time::Instant::now();
+                let mut media_primed = false;
 
                 while rx.changed().await.is_ok() {
                     let state = rx.borrow().clone();
-                    let _ = handle.emit("playback", state.clone());
 
-                    // La tarjeta del sistema solo se toca desde el hilo
-                    // principal: `MediaControls` no es `Send` en Windows.
-                    let for_media = state.clone();
-                    let _ = handle.run_on_main_thread(move || media::update(&for_media));
+                    // La cola solo viaja cuando su revision cambia. Con una
+                    // playlist de cientos de pistas, serializarla diez veces
+                    // por segundo atascaba el IPC, y el atasco se cobraba al
+                    // restaurar la ventana tras minimizar.
+                    let mut wire = state.clone();
+                    if last_sent_rev == Some(wire.queue_rev) {
+                        wire.queue = Vec::new();
+                    } else {
+                        last_sent_rev = Some(wire.queue_rev);
+                    }
+                    let _ = handle.emit("playback", wire);
+
+                    // La tarjeta multimedia del sistema (SMTC) va por COM en el
+                    // HILO PRINCIPAL. Actualizarla en cada tick lo saturaba:
+                    // metadatos solo al cambiar de pista o de estado, posicion
+                    // como mucho cada 2 s.
+                    let media_key = (
+                        state
+                            .track
+                            .as_ref()
+                            .map(|t| t.video_id.clone())
+                            .unwrap_or_default(),
+                        state.playing,
+                    );
+                    let track_changed = !media_primed || media_key.0 != last_media.0;
+                    let play_changed = !media_primed || media_key.1 != last_media.1;
+                    let pos_due =
+                        last_media_push.elapsed() >= std::time::Duration::from_secs(2);
+                    if track_changed || play_changed || pos_due {
+                        media_primed = true;
+                        last_media = media_key;
+                        last_media_push = std::time::Instant::now();
+                        let for_media = state.clone();
+                        let _ = handle.run_on_main_thread(move || {
+                            if track_changed {
+                                media::update(&for_media);
+                            } else {
+                                media::update_playback(&for_media);
+                            }
+                        });
+                    }
 
                     // Historial: al cambiar de pista, no en cada tick.
                     if let Some(t) = &state.track {

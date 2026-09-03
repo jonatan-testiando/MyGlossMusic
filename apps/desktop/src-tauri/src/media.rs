@@ -91,6 +91,32 @@ pub fn init(app: &AppHandle, engine: Engine) {
     tracing::info!("controles multimedia del sistema activos");
 }
 
+/// Solo posicion y estado de reproduccion, sin tocar los metadatos.
+///
+/// Existe porque esto corre en el HILO PRINCIPAL de la ventana: mandar tambien
+/// los metadatos (portada incluida) diez veces por segundo por COM saturaba el
+/// bucle de mensajes — la app no respondia al clic de restaurar desde
+/// minimizado y hasta la barra de tareas iba a tirones.
+pub fn update_playback(state: &PlaybackState) {
+    CONTROLS.with(|cell| {
+        let mut borrow = cell.borrow_mut();
+        let Some(controls) = borrow.as_mut() else {
+            return;
+        };
+        let progress = Some(MediaPosition(std::time::Duration::from_millis(
+            state.position_ms,
+        )));
+        let playback = if state.track.is_none() {
+            MediaPlayback::Stopped
+        } else if state.playing {
+            MediaPlayback::Playing { progress }
+        } else {
+            MediaPlayback::Paused { progress }
+        };
+        let _ = controls.set_playback(playback);
+    });
+}
+
 /// Refleja el estado del reproductor en la tarjeta del sistema.
 ///
 /// Debe ejecutarse en el hilo principal.

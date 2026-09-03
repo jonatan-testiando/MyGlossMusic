@@ -11,6 +11,7 @@ const EMPTY_STATE: PlaybackState = {
   volume: 1,
   buffered: 0,
   queue: [],
+  queueRev: 0,
   queueIndex: 0,
   repeat: "off",
   shuffle: false,
@@ -47,11 +48,23 @@ export const position = localPos;
 
 let lastSync = { at: 0, ms: 0 };
 
+/**
+ * El backend manda la cola solo cuando su revision cambia (con una playlist
+ * grande seria carisimo reenviarla en cada tick); si la revision se repite, se
+ * conserva la cola que ya tenemos.
+ */
+let lastQueueRev = -1;
+function adoptQueue(s: PlaybackState): PlaybackState {
+  if (s.queueRev === lastQueueRev) return { ...s, queue: playback.queue };
+  lastQueueRev = s.queueRev;
+  return s;
+}
+
 export function initStore() {
-  api.getState().then((s) => setPlayback(s));
+  api.getState().then((s) => setPlayback(adoptQueue(s)));
 
   api.onPlayback((s) => {
-    setPlayback(s);
+    setPlayback(adoptQueue(s));
     lastSync = { at: performance.now(), ms: s.positionMs };
     setLocalPos(s.positionMs);
   });

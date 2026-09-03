@@ -106,6 +106,10 @@ pub struct PlaybackState {
     /// Fraccion de la pista ya descargada, 0.0 a 1.0.
     pub buffered: f32,
     pub queue: Vec<Track>,
+    /// Sube cada vez que el CONTENIDO de la cola cambia. Permite al anfitrion
+    /// no reenviar la cola entera (cientos de pistas con una playlist) diez
+    /// veces por segundo: solo cuando esta revision cambia.
+    pub queue_rev: u64,
     pub queue_index: usize,
     pub repeat: Repeat,
     pub shuffle: bool,
@@ -144,6 +148,7 @@ impl Default for PlaybackState {
             volume: 1.0,
             buffered: 0.0,
             queue: Vec::new(),
+            queue_rev: 0,
             queue_index: 0,
             repeat: Repeat::Off,
             shuffle: false,
@@ -188,6 +193,7 @@ impl Engine {
             source_provider,
             prepared: Arc::new(Mutex::new(HashMap::new())),
             partial_warned: false,
+            queue_rev: 0,
         };
 
         tokio::spawn(inner.run(rx));
@@ -310,6 +316,8 @@ struct Inner {
     prepared: Arc<Mutex<HashMap<String, Prepared>>>,
     /// Ya se aviso de que esta pista quedo incompleta.
     partial_warned: bool,
+    /// Revision del contenido de la cola (ver [`PlaybackState::queue_rev`]).
+    queue_rev: u64,
 }
 
 impl Inner {
@@ -338,6 +346,7 @@ impl Inner {
     async fn handle(&mut self, cmd: Command) -> Result<()> {
         match cmd {
             Command::SetQueue { tracks, start } => {
+                self.queue_rev += 1;
                 self.queue.set_items(tracks, start);
                 self.start_current().await?;
             }
@@ -348,11 +357,13 @@ impl Inner {
                     author: None,
                     thumbnail: None,
                 };
+                self.queue_rev += 1;
                 self.queue.set_items(vec![track], 0);
                 self.start_current().await?;
             }
             Command::Enqueue(t) => {
                 let was_empty = self.queue.is_empty();
+                self.queue_rev += 1;
                 self.queue.push(t);
                 if was_empty {
                     self.start_current().await?;
@@ -409,6 +420,8 @@ impl Inner {
         self.error = None;
         self.loading = true;
         self.partial_warned = false;
+        // Al arrancar una pista pueden llegarle metadatos nuevos a la cola.
+        self.queue_rev += 1;
         self.armed.store(false, Ordering::Release);
         self.seek_base = Duration::ZERO;
         self.player.clear();
@@ -576,6 +589,7 @@ impl Inner {
             volume: self.volume,
             buffered: self.current_cache.as_ref().map_or(0.0, |c| c.progress()),
             queue: self.queue.items().iter().map(Track::from).collect(),
+            queue_rev: self.queue_rev,
             queue_index: self.queue.index(),
             repeat: self.queue.repeat(),
             shuffle: self.queue.shuffle(),
