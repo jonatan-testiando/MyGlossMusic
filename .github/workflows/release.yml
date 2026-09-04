@@ -1,0 +1,99 @@
+# Compila MyGlossMusic para Windows, macOS y Linux.
+#
+# No hay compilacion cruzada posible: cada instalador necesita su sistema.
+# macOS exige las herramientas de Xcode para firmar y empaquetar el .app, y
+# Linux enlaza contra WebKitGTK, que solo existe alli. Por eso son tres maquinas
+# y no tres objetivos de una.
+#
+# Se lanza al empujar una etiqueta `v*` (por ejemplo `v0.1.0`) o a mano desde la
+# pestania Actions.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Los dos Mac son dos maquinas distintas a proposito: Apple Silicon e
+          # Intel no se cubren con un solo binario si se quiere que arranque sin
+          # Rosetta en los dos.
+          - plataforma: macos-latest
+            args: "--target aarch64-apple-darwin"
+            triple: aarch64-apple-darwin
+          - plataforma: macos-latest
+            args: "--target x86_64-apple-darwin"
+            triple: x86_64-apple-darwin
+          - plataforma: ubuntu-22.04
+            args: ""
+            triple: x86_64-unknown-linux-gnu
+          - plataforma: windows-latest
+            args: ""
+            triple: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.plataforma }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # WebKitGTK es el motor del webview en Linux. Sin esto el enlazado falla.
+      # 22.04 y no 24.04: ahi el paquete es webkit2gtk-4.1 y Tauri 2 espera 4.0
+      # salvo que se le diga lo contrario.
+      - name: Dependencias de Linux
+        if: matrix.plataforma == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev \
+            librsvg2-dev patchelf libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./apps/desktop/src-tauri -> target"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+
+      - run: npm ci --prefix apps/desktop
+
+      # yt-dlp va dentro del instalador como `externalBin`, y Tauri exige un
+      # binario por objetivo con el triple en el nombre. Sin el, la aplicacion
+      # arranca igual pero cae al acunador, que sirve ~48 s por pista.
+      - name: Traer yt-dlp para ${{ matrix.triple }}
+        shell: bash
+        run: |
+          cd apps/desktop/src-tauri/bin
+          base=https://github.com/yt-dlp/yt-dlp/releases/latest/download
+          case "${{ matrix.triple }}" in
+            x86_64-pc-windows-msvc)   url=$base/yt-dlp.exe;        out=yt-dlp-${{ matrix.triple }}.exe ;;
+            aarch64-apple-darwin|x86_64-apple-darwin)
+                                      url=$base/yt-dlp_macos;      out=yt-dlp-${{ matrix.triple }} ;;
+            x86_64-unknown-linux-gnu) url=$base/yt-dlp_linux;      out=yt-dlp-${{ matrix.triple }} ;;
+          esac
+          if [ ! -f "$out" ]; then curl -fL "$url" -o "$out"; fi
+          chmod +x "$out" || true
+
+      - name: Comprobar antes de empaquetar
+        run: |
+          cargo test --workspace
+          npx --prefix apps/desktop tsc --noEmit -p apps/desktop/tsconfig.json
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: MyGlossMusic ${{ github.ref_name }}
+          releaseDraft: true
+          args: ${{ matrix.args }}

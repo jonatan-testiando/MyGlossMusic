@@ -7,3 +7,8 @@
 
 # Sidecar de yt-dlp: 17 MB, se regenera con scripts/fetch-ytdlp.ps1
 apps/desktop/src-tauri/bin/yt-dlp-*
+
+# Los yt-dlp de otras plataformas los baja el workflow de release: son ~17 MB
+# cada uno y no tienen por que vivir en el repositorio.
+apps/desktop/src-tauri/bin/yt-dlp-*-apple-darwin
+apps/desktop/src-tauri/bin/yt-dlp-*-linux-gnu
