@@ -92,6 +92,8 @@ pub enum Command {
     SetVolume(f32),
     SetRepeat(Repeat),
     SetShuffle(bool),
+    /// Cuanto puede ocupar la cache en disco, en bytes. 0 es sin limite.
+    SetCacheLimit(u64),
     Stop,
 }
 
@@ -197,6 +199,7 @@ impl Engine {
             error: None,
             loading: false,
             source_provider,
+            cache_limit: cache::DEFAULT_LIMIT,
             prepared: Arc::new(Mutex::new(HashMap::new())),
             partial_warned: false,
             queue_rev: 0,
@@ -318,6 +321,8 @@ struct Inner {
     error: Option<String>,
     loading: bool,
     source_provider: Option<SourceProvider>,
+    /// Tope de la cache en disco. Ver [`cache::prune`].
+    cache_limit: u64,
     /// Pistas precargadas, por id. Reproducir una que ya esta aqui reutiliza la
     /// descarga en curso en vez de abrir otra sobre el mismo archivo.
     prepared: Arc<Mutex<HashMap<String, Prepared>>>,
@@ -421,6 +426,10 @@ impl Inner {
             }
             Command::SetRepeat(r) => self.queue.set_repeat(r),
             Command::SetShuffle(on) => self.queue.set_shuffle(on),
+            Command::SetCacheLimit(bytes) => {
+                self.cache_limit = bytes;
+                self.podar_cache();
+            }
             Command::Stop => self.stop(),
         }
         Ok(())
@@ -518,7 +527,22 @@ impl Inner {
         self.armed.store(true, Ordering::Release);
 
         self.prefetch_next();
+        self.podar_cache();
         Ok(())
+    }
+
+    /// Recorta la cache si se ha pasado del tope.
+    ///
+    /// Aqui y no al terminar cada descarga porque es el unico momento en que se
+    /// sabe que archivo NO se puede borrar. La pista que se precarga no hace
+    /// falta protegerla: acaba de crearse, y la poda empieza por la mas antigua.
+    fn podar_cache(&self) {
+        let limite = self.cache_limit;
+        let protegidos: Vec<std::path::PathBuf> =
+            self.current_cache.iter().map(|c| c.path().to_path_buf()).collect();
+        // En un hilo aparte: recorrer el directorio y borrar es E/S de disco, y
+        // el bucle del motor tiene que seguir atendiendo comandos.
+        tokio::task::spawn_blocking(move || cache::prune(limite, &protegidos));
     }
 
     /// Deja lista la siguiente pista en segundo plano. Los fallos se ignoran a

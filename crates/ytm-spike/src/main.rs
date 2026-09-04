@@ -103,7 +103,28 @@ async fn main() -> Result<()> {
         "browse" => {
             let id = args.get(1).map(String::as_str).unwrap_or(ytm_source::browse::HOME);
             let it = InnerTube::new()?;
-            let page = it.browse(id, args.get(2).map(String::as_str)).await?;
+            let mut page = it.browse(id, args.get(2).map(String::as_str)).await?;
+
+            // Se encadenan las tandas para poder comprobar el total de verdad:
+            // YouTube corta las listas de 100 en 100.
+            let mut tandas = 0;
+            let mut token = page.continuation.clone();
+            while let Some(t) = token {
+                let mas = it.browse_more(&t).await?;
+                let nuevas: Vec<_> = mas.shelves.into_iter().flat_map(|e| e.items).collect();
+                if nuevas.is_empty() {
+                    break;
+                }
+                tandas += 1;
+                println!("  + tanda {tandas}: {} pistas", nuevas.len());
+                if let Some(ultima) = page.shelves.last_mut() {
+                    ultima.items.extend(nuevas);
+                }
+                token = mas.continuation;
+                if tandas >= 50 {
+                    break;
+                }
+            }
 
             println!();
             if let Some(t) = &page.title {

@@ -110,6 +110,8 @@ export interface BrowsePage {
   description: string | null;
   thumbnail: string | null;
   shelves: Shelf[];
+  /** Token de la siguiente tanda. YouTube corta las listas de 100 en 100. */
+  continuation: string | null;
 }
 
 /** Un filtro del buscador, tal y como lo ofrece YouTube. */
@@ -140,6 +142,8 @@ export interface PlaylistResult {
 export interface Storage {
   cacheBytes: number;
   cacheFiles: number;
+  /** Tope de la caché en bytes. 0 es sin límite. */
+  cacheLimit: number;
   dbBytes: number;
   cacheDir: string;
   dataDir: string;
@@ -171,6 +175,8 @@ const realApi = {
   home: () => invoke<BrowsePage>("home"),
   browse: (browseId: string, params?: string) =>
     invoke<BrowsePage>("browse", { browseId, params }),
+  browseMore: (continuation: string) =>
+    invoke<BrowsePage>("browse_more", { continuation }),
   setUpNext: (tracks: Partial<Track>[]) => invoke<void>("set_up_next", { tracks }),
 
   playlist: (id: string) => invoke<PlaylistResult>("playlist", { id }),
@@ -210,6 +216,7 @@ const realApi = {
   extractorStatus: () => invoke<ExtractorStatus>("extractor_status"),
   storageInfo: () => invoke<Storage>("storage_info"),
   clearCache: () => invoke<number>("clear_cache"),
+  setCacheLimit: (bytes: number) => invoke<void>("set_cache_limit", { bytes }),
   appVersion: () => invoke<string>("app_version"),
 
   minimize: () => (inTauri ? getCurrentWindow().minimize() : Promise.resolve()),

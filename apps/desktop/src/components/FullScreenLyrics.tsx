@@ -1,6 +1,6 @@
 import { For, Show, createEffect, on } from "solid-js";
 import { api, thumbAt } from "../lib/api";
-import { playback, lyrics, lyricsLoading, position, setFullLyricsOpen } from "../lib/store";
+import { lyrics, lyricsLoading, position, setFullLyricsOpen, trackVisible } from "../lib/store";
 import * as I from "./Icons";
 
 export function FullScreenLyrics() {
@@ -50,17 +50,17 @@ export function FullScreenLyrics() {
         {/* Lado izquierdo: portada y metadatos */}
         <div class="flex w-[340px] shrink-0 flex-col items-center text-center">
           <Show
-            when={playback.track?.thumbnail}
+            when={trackVisible()?.thumbnail}
             fallback={<div class="size-72 rounded-2xl bg-white/10 shadow-2xl" />}
           >
             <img
-              src={thumbAt(playback.track!.thumbnail, 540)!}
+              src={thumbAt(trackVisible()!.thumbnail, 540)!}
               alt=""
               class="size-72 rounded-2xl object-cover shadow-[0_20px_60px_-15px_rgba(0,0,0,0.7)] ring-1 ring-white/10"
             />
           </Show>
-          <h2 class="mt-6 text-xl font-bold tracking-tight line-clamp-1">{playback.track?.title ?? "Sin título"}</h2>
-          <p class="mt-1 text-sm opacity-60 line-clamp-1">{playback.track?.author ?? "Desconocido"}</p>
+          <h2 class="mt-6 text-xl font-bold tracking-tight line-clamp-1">{trackVisible()?.title ?? "Sin título"}</h2>
+          <p class="mt-1 text-sm opacity-60 line-clamp-1">{trackVisible()?.author ?? "Desconocido"}</p>
         </div>
 
         {/* Lado derecho: flujo de letras grandes */}

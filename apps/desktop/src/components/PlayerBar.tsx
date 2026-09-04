@@ -1,6 +1,16 @@
 import { Show, createSignal } from "solid-js";
 import { api, fmtTime, thumbAt } from "../lib/api";
-import { playback, position, isFavorite, toggleFavorite, playerViewOpen, setPlayerViewOpen } from "../lib/store";
+import {
+  playback,
+  position,
+  isFavorite,
+  toggleFavorite,
+  playerViewOpen,
+  setPlayerViewOpen,
+  pendiente,
+  reanudarPendiente,
+  trackVisible,
+} from "../lib/store";
 import * as I from "./Icons";
 import { TrackMenu } from "./TrackMenu";
 
@@ -42,6 +52,17 @@ export function PlayerBar() {
     window.addEventListener("mouseup", onUp);
   };
 
+  /**
+   * Reproducir/pausar.
+   *
+   * Al abrir la aplicación se ve la última canción, pero el motor no tiene
+   * nada cargado: el primer toque la arranca en vez de no hacer nada.
+   */
+  const alternar = () => {
+    if (!playback.track && pendiente()) reanudarPendiente();
+    else api.togglePlay();
+  };
+
   const cycleRepeat = () => {
     const next = playback.repeat === "off" ? "all" : playback.repeat === "all" ? "one" : "off";
     api.setRepeat(next);
@@ -78,7 +99,7 @@ export function PlayerBar() {
         </button>
         <button
           class="icon-btn size-11 !opacity-100 rounded-full text-white hover:bg-white/10 active:scale-95 transition-all"
-          onClick={() => api.togglePlay()}
+          onClick={alternar}
           title={playback.playing ? "Pausar" : "Reproducir"}
         >
           <Show when={!playback.loading} fallback={<Spinner />}>
@@ -104,11 +125,11 @@ export function PlayerBar() {
       {/* 2. Centro: Carátula + Título + Artista + Thumbs & Más opciones */}
       <div class="flex items-center gap-3.5 max-w-[500px]">
         <Show
-          when={playback.track?.thumbnail}
+          when={trackVisible()?.thumbnail}
           fallback={<div class="size-11 shrink-0 rounded-lg bg-white/10 cursor-pointer" onClick={() => setPlayerViewOpen(!playerViewOpen())} />}
         >
           <img
-            src={thumbAt(playback.track!.thumbnail, 96)!}
+            src={thumbAt(trackVisible()!.thumbnail, 96)!}
             alt=""
             class="size-11 shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-sm cursor-pointer hover:opacity-85 transition-opacity"
             onClick={() => setPlayerViewOpen(!playerViewOpen())}
@@ -119,21 +140,17 @@ export function PlayerBar() {
             class="truncate text-[13.5px] font-bold text-white leading-snug cursor-pointer hover:underline"
             onClick={() => setPlayerViewOpen(!playerViewOpen())}
           >
-            {playback.track?.title ?? "Nada reproduciéndose"}
+            {trackVisible()?.title ?? "Nada reproduciéndose"}
           </div>
           <div class="truncate text-[11.5px] text-white/55 font-medium mt-0.5">
-            {playback.track?.author ?? ""}
+            {trackVisible()?.author ?? ""}
           </div>
         </div>
 
+        {/* Solo con una pista cargada de verdad: "me gusta" lo resuelve el
+            motor sobre lo que suena, no sobre lo que se ve. */}
         <Show when={playback.track}>
           <div class="flex items-center gap-0.5 ml-1">
-            <button
-              class="icon-btn size-8 text-white/60 hover:text-white"
-              title="No me gusta"
-            >
-              <I.ThumbsDown size={16} />
-            </button>
             <button
               class="icon-btn size-8"
               classList={{

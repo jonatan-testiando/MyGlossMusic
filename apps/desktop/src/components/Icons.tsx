@@ -6,16 +6,31 @@ type P = { size?: number; class?: string };
  * Grosor de trazo que se ve IGUAL a cualquier tamanio.
  *
  * El `viewBox` es siempre de 24, asi que un `stroke-width` fijo adelgaza al
- * reducir el icono: 1,8 en un icono de 12 px se pinta a 0,9 px reales, y sobre
- * un fondo claro eso desaparece. Los iconos de la barra de titulo (12-15 px)
- * eran justo los que se perdian, mientras que el de minimizar — una linea
- * larga y sola — aguantaba.
- *
- * Escalando el grosor con el tamanio, todos se pintan a ~1,5 px reales.
+ * reducir el icono: 1,8 en uno de 12 px se pinta a 0,9 px reales y queda
+ * visiblemente mas flojo que el mismo icono a 20 px. Escalando el grosor con
+ * el tamanio, todos se pintan a ~1,5 px reales.
  */
 const trazo = (size: number) => Math.min(3.2, (1.8 * 20) / size);
 
-const svg = (path: JSX.Element, fill = true) => (p: P) =>
+/**
+ * Fabrica de iconos. El cuerpo llega como FUNCION, y eso no es un capricho.
+ *
+ * En Solid el JSX no es una descripcion: se compila a nodos del DOM de verdad,
+ * creados una sola vez cuando se evalua el modulo. Pasando el cuerpo como
+ * valor, los 34 iconos de este archivo serian 34 nodos unicos compartidos por
+ * todo el arbol — y un nodo solo puede tener un padre. Al montarse el mismo
+ * icono en dos sitios a la vez, el segundo se LLEVABA el nodo del primero:
+ *
+ *   - `Close` esta en la barra de titulo, en los modales y en cada fila de una
+ *     playlist. Abrir una playlist vaciaba la X de cerrar ventana.
+ *   - `Play` esta en el reproductor y en cada fila. Idem.
+ *   - `Plus` esta en "Nueva playlist" y en el menu de una cancion.
+ *
+ * `Prev`, `Next`, `Pause` y `Minimize` no se perdian nunca, y era por lo mismo:
+ * se usan en un unico sitio. Con una funcion, cada montaje instancia su propia
+ * plantilla y el problema desaparece de raiz.
+ */
+const svg = (cuerpo: () => JSX.Element, fill = true) => (p: P) =>
   (
     <svg
       width={p.size ?? 20}
@@ -29,16 +44,16 @@ const svg = (path: JSX.Element, fill = true) => (p: P) =>
       class={p.class}
       aria-hidden="true"
     >
-      {path}
+      {cuerpo()}
     </svg>
   );
 
-export const Play = svg(<path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.4-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14Z" />);
-export const Pause = svg(<path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" />);
-export const Prev = svg(<path d="M7 5h2.2v14H7zm12 .9v12.2a1 1 0 0 1-1.55.83l-9-6.1a1 1 0 0 1 0-1.66l9-6.1A1 1 0 0 1 19 5.9Z" />);
-export const Next = svg(<path d="M14.8 5H17v14h-2.2zM5 5.9v12.2a1 1 0 0 0 1.55.83l9-6.1a1 1 0 0 0 0-1.66l-9-6.1A1 1 0 0 0 5 5.9Z" />);
+export const Play = svg(() => <path d="M8 5.14v13.72a1 1 0 0 0 1.54.84l10.4-6.86a1 1 0 0 0 0-1.68L9.54 4.3A1 1 0 0 0 8 5.14Z" />);
+export const Pause = svg(() => <path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" />);
+export const Prev = svg(() => <path d="M7 5h2.2v14H7zm12 .9v12.2a1 1 0 0 1-1.55.83l-9-6.1a1 1 0 0 1 0-1.66l9-6.1A1 1 0 0 1 19 5.9Z" />);
+export const Next = svg(() => <path d="M14.8 5H17v14h-2.2zM5 5.9v12.2a1 1 0 0 0 1.55.83l9-6.1a1 1 0 0 0 0-1.66l-9-6.1A1 1 0 0 0 5 5.9Z" />);
 
-export const Shuffle = svg(
+export const Shuffle = svg(() => 
   <>
     <path d="M16 3h5v5" />
     <path d="M4 20 21 3" />
@@ -49,7 +64,7 @@ export const Shuffle = svg(
   false,
 );
 
-export const Repeat = svg(
+export const Repeat = svg(() => 
   <>
     <path d="m17 2 4 4-4 4" />
     <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
@@ -59,7 +74,7 @@ export const Repeat = svg(
   false,
 );
 
-export const RepeatOne = svg(
+export const RepeatOne = svg(() => 
   <>
     <path d="m17 2 4 4-4 4" />
     <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
@@ -70,7 +85,7 @@ export const RepeatOne = svg(
   false,
 );
 
-export const Volume = svg(
+export const Volume = svg(() => 
   <>
     <path d="M11 5 6 9H3v6h3l5 4z" />
     <path d="M16 9a4 4 0 0 1 0 6" />
@@ -79,7 +94,7 @@ export const Volume = svg(
   false,
 );
 
-export const VolumeMute = svg(
+export const VolumeMute = svg(() => 
   <>
     <path d="M11 5 6 9H3v6h3l5 4z" />
     <path d="m17 9 5 6M22 9l-5 6" />
@@ -87,7 +102,7 @@ export const VolumeMute = svg(
   false,
 );
 
-export const Search = svg(
+export const Search = svg(() => 
   <>
     <circle cx="11" cy="11" r="7" />
     <path d="m20 20-3.5-3.5" />
@@ -95,7 +110,7 @@ export const Search = svg(
   false,
 );
 
-export const Home = svg(
+export const Home = svg(() => 
   <>
     <path d="M3 10.5 12 3l9 7.5" />
     <path d="M5.5 9.5V20h13V9.5" />
@@ -103,7 +118,7 @@ export const Home = svg(
   false,
 );
 
-export const Stethoscope = svg(
+export const Stethoscope = svg(() => 
   <>
     <path d="M5 3v6a4 4 0 0 0 8 0V3" />
     <path d="M5 3h2M11 3h2" />
@@ -113,10 +128,10 @@ export const Stethoscope = svg(
   false,
 );
 
-export const Minimize = svg(<path d="M5 12h14" />, false);
-export const Maximize = svg(<rect x="5.5" y="5.5" width="13" height="13" rx="1.5" />, false);
-export const Close = svg(<path d="m6 6 12 12M18 6 6 18" />, false);
-export const Music = svg(
+export const Minimize = svg(() => <path d="M5 12h14" />, false);
+export const Maximize = svg(() => <rect x="5.5" y="5.5" width="13" height="13" rx="1.5" />, false);
+export const Close = svg(() => <path d="m6 6 12 12M18 6 6 18" />, false);
+export const Music = svg(() => 
   <>
     <path d="M9 18V5l11-2v13" />
     <circle cx="6" cy="18" r="3" />
@@ -125,14 +140,14 @@ export const Music = svg(
   false,
 );
 
-export const Heart = svg(
+export const Heart = svg(() => 
   <path d="M12 20.3 4.6 13a4.7 4.7 0 0 1 6.6-6.7l.8.8.8-.8A4.7 4.7 0 0 1 19.4 13Z" />,
   false,
 );
-export const HeartFilled = svg(
+export const HeartFilled = svg(() => 
   <path d="M12 20.3 4.6 13a4.7 4.7 0 0 1 6.6-6.7l.8.8.8-.8A4.7 4.7 0 0 1 19.4 13Z" />,
 );
-export const Library = svg(
+export const Library = svg(() => 
   <>
     <path d="M4 4v16M9 4v16" />
     <path d="m14 5 5 15" />
@@ -140,7 +155,7 @@ export const Library = svg(
   false,
 );
 
-export const Lyrics = svg(
+export const Lyrics = svg(() => 
   <>
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
     <line x1="8" y1="9" x2="16" y2="9" />
@@ -149,7 +164,7 @@ export const Lyrics = svg(
   false,
 );
 
-export const More = svg(
+export const More = svg(() => 
   <>
     <circle cx="12" cy="12" r="1.5" />
     <circle cx="12" cy="5" r="1.5" />
@@ -157,7 +172,7 @@ export const More = svg(
   </>,
 );
 
-export const Menu = svg(
+export const Menu = svg(() => 
   <>
     <line x1="3" y1="12" x2="21" y2="12" />
     <line x1="3" y1="6" x2="21" y2="6" />
@@ -166,7 +181,7 @@ export const Menu = svg(
   false,
 );
 
-export const Compass = svg(
+export const Compass = svg(() => 
   <>
     <circle cx="12" cy="12" r="10" />
     <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
@@ -174,20 +189,20 @@ export const Compass = svg(
   false,
 );
 
-export const ThumbsUp = svg(
+export const ThumbsUp = svg(() => 
   <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3" />,
   false,
 );
 
-export const ThumbsDown = svg(
+export const ThumbsDown = svg(() => 
   <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3zm7-13h3a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-3" />,
   false,
 );
 
-export const ChevronUp = svg(<path d="m18 15-6-6-6 6" />, false);
-export const ChevronDown = svg(<path d="m6 9 6 6 6-6" />, false);
+export const ChevronUp = svg(() => <path d="m18 15-6-6-6 6" />, false);
+export const ChevronDown = svg(() => <path d="m6 9 6 6 6-6" />, false);
 
-export const Pin = svg(
+export const Pin = svg(() => 
   <>
     <line x1="12" y1="17" x2="12" y2="22" />
     <path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a1 1 0 0 0 0-2H8a1 1 0 0 0 0 2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z" />
@@ -195,7 +210,7 @@ export const Pin = svg(
   false,
 );
 
-export const Plus = svg(
+export const Plus = svg(() => 
   <>
     <line x1="12" y1="5" x2="12" y2="19" />
     <line x1="5" y1="12" x2="19" y2="12" />
@@ -203,16 +218,16 @@ export const Plus = svg(
   false,
 );
 
-export const ChevronLeft = svg(<path d="m15 18-6-6 6-6" />, false);
-export const ChevronRight = svg(<path d="m9 18 6-6-6-6" />, false);
-export const Refresh = svg(
+export const ChevronLeft = svg(() => <path d="m15 18-6-6 6-6" />, false);
+export const ChevronRight = svg(() => <path d="m9 18 6-6-6-6" />, false);
+export const Refresh = svg(() => 
   <>
     <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
   </>,
   false,
 );
 
-export const Trash = svg(
+export const Trash = svg(() => 
   <>
     <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
     <path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7" />
@@ -221,7 +236,7 @@ export const Trash = svg(
   false,
 );
 
-export const Settings = svg(
+export const Settings = svg(() => 
   <>
     <circle cx="12" cy="12" r="3" />
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />

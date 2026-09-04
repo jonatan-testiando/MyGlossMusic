@@ -25,7 +25,9 @@ use serde_json::{json, Value};
 
 use crate::clients::WEB_REMIX;
 use crate::innertube::InnerTube;
-use crate::search::{collect_by_key, extract_thumbnail, flex_column_texts, runs_text};
+use crate::search::{
+    collect_by_key, extract_thumbnail, flex_column_texts, parse_continuation, runs_text,
+};
 
 const BROWSE_URL: &str = "https://music.youtube.com/youtubei/v1/browse";
 
@@ -81,6 +83,11 @@ pub struct BrowsePage {
     /// Imagen de cabecera.
     pub thumbnail: Option<String>,
     pub shelves: Vec<Shelf>,
+    /// Token de la siguiente tanda de pistas, si la lista no cabe en una.
+    ///
+    /// YouTube corta las playlists en paginas de 100. Una de 551 pistas llega
+    /// en seis respuestas, y sin esto se quedaba en las 100 primeras.
+    pub continuation: Option<String>,
 }
 
 impl InnerTube {
@@ -126,6 +133,44 @@ impl InnerTube {
         Ok(parse_page(&json))
     }
 
+    /// Siguiente tanda de una pagina ya abierta.
+    ///
+    /// Igual que en la busqueda, la continuacion viaja en la QUERY y no en el
+    /// cuerpo: mandada en el JSON, este endpoint devuelve la primera pagina
+    /// otra vez sin dar error, que es peor que fallar.
+    pub async fn browse_more(&self, continuation: &str) -> Result<BrowsePage> {
+        let url = format!("{BROWSE_URL}?ctoken={c}&continuation={c}&type=next", c = continuation);
+        let body = json!({
+            "context": {
+                "client": {
+                    "clientName": WEB_REMIX.client_name,
+                    "clientVersion": WEB_REMIX.client_version,
+                    "hl": "es",
+                    "gl": "US",
+                }
+            }
+        });
+
+        let res = self
+            .http_ref()
+            .post(&url)
+            .header("User-Agent", WEB_REMIX.user_agent)
+            .header("X-YouTube-Client-Name", WEB_REMIX.client_name_id.to_string())
+            .header("X-YouTube-Client-Version", WEB_REMIX.client_version)
+            .header("Content-Type", "application/json")
+            .header("Origin", "https://music.youtube.com")
+            .header("Referer", "https://music.youtube.com/")
+            .json(&body)
+            .send()
+            .await
+            .context("fallo la continuacion de browse")?
+            .error_for_status()
+            .context("el servidor rechazo la continuacion de browse")?;
+
+        let json: Value = res.json().await.context("continuacion de browse ilegible")?;
+        Ok(parse_continued(&json))
+    }
+
     /// Feed de inicio.
     pub async fn home(&self) -> Result<BrowsePage> {
         self.browse(HOME, None).await
@@ -134,8 +179,15 @@ impl InnerTube {
 
 /// Normaliza una respuesta de `browse` sin depender de la forma del arbol.
 pub fn parse_page(root: &Value) -> BrowsePage {
+    let crudas = collect_shelves(root);
+
+    // El token se busca DENTRO de las estanterias, no en toda la respuesta: en
+    // el inicio hay continuaciones de la lista de secciones (mas filas) que no
+    // tienen nada que ver con seguir leyendo pistas de una lista.
+    let continuation = crudas.iter().find_map(|s| parse_continuation(s));
+
     let mut page = BrowsePage {
-        shelves: collect_shelves(root)
+        shelves: crudas
             .into_iter()
             .filter_map(|s| {
                 let shelf = parse_shelf(s);
@@ -143,6 +195,7 @@ pub fn parse_page(root: &Value) -> BrowsePage {
                 (!shelf.items.is_empty()).then_some(shelf)
             })
             .collect(),
+        continuation,
         ..Default::default()
     };
 
@@ -155,6 +208,37 @@ pub fn parse_page(root: &Value) -> BrowsePage {
         page.thumbnail = extract_thumbnail(header);
     }
     page
+}
+
+/// Normaliza una respuesta de CONTINUACION, que no tiene la forma de una pagina.
+///
+/// Comprobado contra la lista real de 551 pistas: la tanda 2 no llega envuelta
+/// en ninguna estanteria, sino como
+/// `onResponseReceivedActions[].appendContinuationItemsAction.continuationItems`,
+/// un array pelado de filas. Por eso [`parse_page`] la leia vacia y la lista se
+/// quedaba en 100.
+///
+/// Como aqui no hay estanterias que respetar, se recogen las filas alla donde
+/// esten y se devuelven en una sola. Eso vale para las dos formas que usa
+/// YouTube — esta y la antigua `musicPlaylistShelfContinuation` — sin tener que
+/// distinguirlas.
+pub fn parse_continued(root: &Value) -> BrowsePage {
+    let mut rows = Vec::new();
+    collect_by_key(root, "musicResponsiveListItemRenderer", &mut rows);
+    let mut cards = Vec::new();
+    collect_by_key(root, "musicTwoRowItemRenderer", &mut cards);
+
+    let items: Vec<ShelfItem> = rows
+        .into_iter()
+        .filter_map(parse_row)
+        .chain(cards.into_iter().filter_map(parse_card))
+        .collect();
+
+    BrowsePage {
+        shelves: if items.is_empty() { Vec::new() } else { vec![Shelf { title: String::new(), items }] },
+        continuation: parse_continuation(root),
+        ..Default::default()
+    }
 }
 
 /// La cabecera de artista o album. El feed de inicio no trae ninguna.
@@ -475,6 +559,71 @@ mod tests {
         assert_eq!(page.title.as_deref(), Some("SABAI"));
         assert_eq!(page.subtitle.as_deref(), Some("1,25 M de oyentes mensuales"));
         assert_eq!(page.thumbnail.as_deref(), Some("https://ejemplo/artista.jpg"));
+    }
+
+    #[test]
+    fn una_lista_larga_deja_token_para_la_siguiente_tanda() {
+        // YouTube corta las playlists en paginas de 100. Sin leer esto, una
+        // lista de 551 pistas se quedaba en las 100 primeras.
+        let page = parse_page(&json!({ "musicPlaylistShelfRenderer": {
+            "contents": [{ "musicResponsiveListItemRenderer": {
+                "playlistItemData": { "videoId": "abcdefghijk" },
+                "flexColumns": [{ "musicResponsiveListItemFlexColumnRenderer":
+                    { "text": { "runs": [{ "text": "Pista 100" }] } } }]
+            }}],
+            "continuations": [{ "nextContinuationData": { "continuation": "SIGUE" } }]
+        }}));
+        assert_eq!(page.continuation.as_deref(), Some("SIGUE"));
+    }
+
+    #[test]
+    fn la_segunda_tanda_llega_sin_estanteria() {
+        // Forma real de la respuesta, comprobada contra una lista de 551
+        // pistas: filas peladas dentro de `appendContinuationItemsAction`. Sin
+        // un parser propio, `parse_page` no veia ninguna estanteria y la lista
+        // se quedaba en las 100 primeras.
+        let page = parse_continued(&json!({ "onResponseReceivedActions": [{
+            "appendContinuationItemsAction": { "continuationItems": [
+                { "musicResponsiveListItemRenderer": {
+                    "playlistItemData": { "videoId": "bbbbbbbbbbb" },
+                    "flexColumns": [{ "musicResponsiveListItemFlexColumnRenderer":
+                        { "text": { "runs": [{ "text": "Pista 101" }] } } }]
+                }},
+                { "continuationItemRenderer": { "continuationEndpoint": {
+                    "continuationCommand": { "token": "TANDA_3" }
+                }}}
+            ]}
+        }]}));
+
+        assert_eq!(page.shelves.len(), 1);
+        assert_eq!(page.shelves[0].items[0].title, "Pista 101");
+        assert_eq!(page.continuation.as_deref(), Some("TANDA_3"));
+    }
+
+    #[test]
+    fn la_ultima_tanda_no_deja_token() {
+        let page = parse_continued(&json!({ "onResponseReceivedActions": [{
+            "appendContinuationItemsAction": { "continuationItems": [
+                { "musicResponsiveListItemRenderer": {
+                    "playlistItemData": { "videoId": "ccccccccccc" },
+                    "flexColumns": [{ "musicResponsiveListItemFlexColumnRenderer":
+                        { "text": { "runs": [{ "text": "Pista 551" }] } } }]
+                }}
+            ]}
+        }]}));
+        assert_eq!(page.shelves[0].items.len(), 1);
+        assert!(page.continuation.is_none());
+    }
+
+    #[test]
+    fn el_inicio_no_se_inventa_una_continuacion() {
+        // La lista de secciones del inicio tambien trae token, pero es para
+        // mas filas, no para seguir leyendo pistas. Se ignora a proposito.
+        let page = parse_page(&json!({
+            "contents": [carrusel_con("Con algo", json!([tarjeta("A", "aaaaaaaaaaa")]))],
+            "continuations": [{ "nextContinuationData": { "continuation": "MAS_FILAS" } }]
+        }));
+        assert!(page.continuation.is_none());
     }
 
     #[test]

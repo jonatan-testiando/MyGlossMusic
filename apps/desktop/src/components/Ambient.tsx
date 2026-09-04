@@ -1,6 +1,6 @@
 import { Index, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import { Kawarp } from "@kawarp/core";
-import { ambientEnabled, palette, playback } from "../lib/store";
+import { ambientEnabled, palette, trackVisible } from "../lib/store";
 import { thumbAt } from "../lib/api";
 
 /**
@@ -71,7 +71,7 @@ export function Ambient() {
 
   // Se pide pequena: el shader la desenfoca de todas formas, y una portada de
   // 1280 px solo aniadiria descarga y memoria de textura.
-  const cover = () => thumbAt(playback.track?.thumbnail, 320, 180);
+  const cover = () => thumbAt(trackVisible()?.thumbnail, 320, 180);
 
   onMount(() => {
     let kawarp: Kawarp;

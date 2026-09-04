@@ -27,6 +27,7 @@ import {
   showPlaylist,
   setCreatingPlaylist,
   browsePage,
+  browseCompleting,
   browseLoading,
   openBrowse,
   saveBrowseAsPlaylist,
@@ -499,6 +500,7 @@ const VACIO: BrowsePage = {
   description: null,
   thumbnail: null,
   shelves: [],
+  continuation: null,
 };
 
 /**
@@ -975,6 +977,14 @@ export function BrowseView() {
               </Show>
             )}
           </For>
+
+          {/* Las listas largas llegan de 100 en 100. Se avisa en vez de dejar
+              que parezca que la lista se acaba donde acaba la primera tanda. */}
+          <Show when={browseCompleting()}>
+            <p class="py-2 text-center text-[13px] text-white/40">
+              Cargando el resto de la lista… {pistas().length} pistas
+            </p>
+          </Show>
         </div>
       </Show>
 

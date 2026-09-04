@@ -8,6 +8,7 @@ import {
   setFullLyricsOpen,
   relatedArtistId,
   openBrowse,
+  trackVisible,
 } from "../lib/store";
 import * as I from "./Icons";
 import { TrackMenu } from "./TrackMenu";
@@ -132,7 +133,7 @@ function QueueView() {
               REPRODUCIENDO DESDE
             </span>
             <div class="text-[16px] font-bold text-white tracking-tight leading-tight truncate">
-              {playback.track ? `Mix de ${playback.track.title}` : "Tu cola de reproducción"}
+              {trackVisible() ? `Mix de ${trackVisible()!.title}` : "Tu cola de reproducción"}
             </div>
           </div>
           <button class="flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/15 px-4 py-1.5 text-xs font-semibold text-white border border-white/10 transition-all shadow-sm">

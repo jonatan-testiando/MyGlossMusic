@@ -84,6 +84,10 @@ impl TrackCache {
         if let (Some(expected), Ok(meta)) = (expected_size, std::fs::metadata(&path)) {
             if meta.len() == expected {
                 tracing::debug!(path = %path.display(), "cache hit");
+                // La fecha de modificacion es el reloj de uso de la cache: la
+                // poda borra por antiguedad, y sin tocarla al reutilizar una
+                // pista, la mas escuchada seria la primera en caer.
+                tocar(&path);
                 return Ok(Self {
                     path,
                     shared: Arc::new(Shared {
@@ -480,4 +484,178 @@ pub fn cache_dir() -> PathBuf {
 /// Ruta en cache para una pista concreta.
 pub fn track_path(video_id: &str, itag: u32) -> PathBuf {
     cache_dir().join(format!("{video_id}-{itag}.m4a"))
+}
+
+/// Marca una pista como recien usada.
+///
+/// No hay `utime` en la biblioteca estandar y la fecha de ULTIMO ACCESO de NTFS
+/// viene desactivada de fabrica en Windows, asi que no sirve. Abrir el archivo
+/// para escritura sin escribir nada tampoco actualiza nada. Lo que si funciona
+/// en los dos sistemas es reescribir el ultimo byte por su mismo valor: el
+/// contenido no cambia y la fecha de modificacion pasa a ser ahora.
+fn tocar(path: &Path) {
+    let Ok(mut f) = std::fs::OpenOptions::new().read(true).write(true).open(path) else {
+        return;
+    };
+    let Ok(len) = f.seek(SeekFrom::End(-1)) else {
+        return; // archivo vacio: no hay byte que reescribir, y tampoco importa
+    };
+    let mut b = [0u8; 1];
+    if f.read_exact(&mut b).is_ok() && f.seek(SeekFrom::Start(len)).is_ok() {
+        let _ = f.write_all(&b);
+    }
+}
+
+/// Limite por defecto de la cache en disco: 3 GiB.
+///
+/// Una pista en itag 140 pesa ~3,5 MB, asi que son unas 850 canciones. Pasado
+/// eso, lo que queda cacheado ya no es "lo que escucho" sino "todo lo que he
+/// escuchado alguna vez", y eso no acelera nada.
+pub const DEFAULT_LIMIT: u64 = 3 * 1024 * 1024 * 1024;
+
+/// Borra las pistas menos usadas hasta que la cache cabe en `limit`.
+///
+/// Devuelve cuantas se borraron. `limit` en 0 significa sin limite.
+///
+/// El criterio es la fecha de modificacion, que [`tocar`] refresca en cada
+/// acierto: se va la que lleva mas tiempo sin sonar, no la mas vieja. Los
+/// archivos de `protegidos` no se tocan aunque sean los mas antiguos — son la
+/// pista que suena y la que se esta precargando, y borrarlas seria cortar la
+/// reproduccion para hacer sitio a la reproduccion.
+pub fn prune(limit: u64, protegidos: &[PathBuf]) -> u64 {
+    prune_dir(&cache_dir(), limit, protegidos)
+}
+
+/// Igual que [`prune`] pero sobre un directorio cualquiera, para poder probarlo.
+pub fn prune_dir(dir: &Path, limit: u64, protegidos: &[PathBuf]) -> u64 {
+    if limit == 0 {
+        return 0;
+    }
+    let Ok(entradas) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+
+    // Plano y sin recursion, como el resto de operaciones sobre la cache: un
+    // borrado recursivo sobre una ruta inesperada no tiene vuelta atras.
+    let mut archivos: Vec<(PathBuf, u64, std::time::SystemTime)> = entradas
+        .filter_map(Result::ok)
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            if !meta.is_file() {
+                return None;
+            }
+            Some((e.path(), meta.len(), meta.modified().ok()?))
+        })
+        .collect();
+
+    let mut total: u64 = archivos.iter().map(|(_, len, _)| len).sum();
+    if total <= limit {
+        return 0;
+    }
+
+    archivos.sort_by_key(|(_, _, t)| *t); // el mas antiguo primero
+    let mut borrados = 0;
+    for (path, len, _) in archivos {
+        if total <= limit {
+            break;
+        }
+        if protegidos.iter().any(|p| *p == path) {
+            continue;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            total = total.saturating_sub(len);
+            borrados += 1;
+        }
+    }
+    if borrados > 0 {
+        tracing::info!(borrados, restante = total, limite = limit, "cache podada");
+    }
+    borrados
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Directorio temporal propio: `prune_dir` borra archivos, y una prueba que
+    /// borra no puede compartir carpeta con otra.
+    fn carpeta(nombre: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("ytm-cache-test-{nombre}"));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// Crea un archivo de `bytes`.
+    ///
+    /// Las pistas se crean en orden de mas antigua a mas reciente, con una
+    /// pausa entre medias: es lo que da la fecha de modificacion sin depender
+    /// de ninguna biblioteca para falsearla. 20 ms sobran — NTFS y ext4 guardan
+    /// la fecha con resolucion muy por debajo del milisegundo.
+    fn pista(dir: &Path, nombre: &str, bytes: usize) -> PathBuf {
+        let p = dir.join(nombre);
+        std::fs::write(&p, vec![7u8; bytes]).unwrap();
+        std::thread::sleep(Duration::from_millis(20));
+        p
+    }
+
+    #[test]
+    fn se_va_la_que_lleva_mas_tiempo_sin_sonar() {
+        let d = carpeta("antiguedad");
+        pista(&d, "vieja.m4a", 600);
+        pista(&d, "media.m4a", 600);
+        pista(&d, "nueva.m4a", 600);
+
+        // Caben dos de 600 B en 1300, asi que sobra una: la mas antigua.
+        assert_eq!(prune_dir(&d, 1_300, &[]), 1);
+        assert!(!d.join("vieja.m4a").exists());
+        assert!(d.join("media.m4a").exists());
+        assert!(d.join("nueva.m4a").exists());
+    }
+
+    #[test]
+    fn no_borra_la_que_esta_sonando() {
+        // Aunque sea la mas antigua: borrarla seria cortar la reproduccion
+        // para hacer sitio a la reproduccion.
+        let d = carpeta("protegida");
+        let sonando = pista(&d, "sonando.m4a", 600);
+        pista(&d, "otra.m4a", 600);
+
+        assert_eq!(prune_dir(&d, 700, &[sonando.clone()]), 1);
+        assert!(sonando.exists());
+        assert!(!d.join("otra.m4a").exists());
+    }
+
+    #[test]
+    fn por_debajo_del_tope_no_toca_nada() {
+        let d = carpeta("holgada");
+        pista(&d, "a.m4a", 600);
+        assert_eq!(prune_dir(&d, 10_000, &[]), 0);
+        assert!(d.join("a.m4a").exists());
+    }
+
+    #[test]
+    fn cero_es_sin_limite() {
+        let d = carpeta("sin-limite");
+        pista(&d, "a.m4a", 600);
+        assert_eq!(prune_dir(&d, 0, &[]), 0);
+        assert!(d.join("a.m4a").exists());
+    }
+
+    #[test]
+    fn reutilizar_una_pista_la_pone_al_final_de_la_cola() {
+        // `tocar` es lo que convierte la poda en "la menos usada" en vez de "la
+        // mas vieja". Sin esto, la cancion favorita seria la primera en caer.
+        let d = carpeta("tocar");
+        let favorita = pista(&d, "favorita.m4a", 600);
+        pista(&d, "de-paso.m4a", 600);
+
+        std::thread::sleep(Duration::from_millis(20));
+        tocar(&favorita);
+        assert_eq!(std::fs::read(&favorita).unwrap(), vec![7u8; 600], "el contenido no cambia");
+
+        assert_eq!(prune_dir(&d, 700, &[]), 1);
+        assert!(favorita.exists());
+        assert!(!d.join("de-paso.m4a").exists());
+    }
 }

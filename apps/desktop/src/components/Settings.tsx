@@ -54,6 +54,22 @@ function Interruptor(p: { on: boolean; onToggle: () => void; label: string }) {
   );
 }
 
+/**
+ * Topes que se ofrecen para la caché.
+ *
+ * Una pista pesa ~3,5 MB, así que 3 GB son unas 850 canciones — más de lo que
+ * nadie reescucha en una temporada. Por debajo de 1 GB la caché deja de servir
+ * de nada, y por eso no hay opciones más pequeñas.
+ */
+const TOPES: [number, string][] = [
+  [1024 ** 3, "1 GB"],
+  [2 * 1024 ** 3, "2 GB"],
+  [3 * 1024 ** 3, "3 GB"],
+  [5 * 1024 ** 3, "5 GB"],
+  [10 * 1024 ** 3, "10 GB"],
+  [0, "Sin límite"],
+];
+
 function Fila(p: { titulo: string; nota?: string; children?: any }) {
   return (
     <div class="flex items-center justify-between gap-6 border-b border-white/[0.06] py-3.5 last:border-0">
@@ -189,6 +205,28 @@ export function SettingsDialog() {
                     {limpiando() ? "Vaciando…" : "Vaciar"}
                   </button>
                 </div>
+              </Fila>
+
+              <Fila
+                titulo="Tope de la caché"
+                nota="Al pasarse, se borran las pistas que llevan más tiempo sin sonar. Nunca la que está reproduciéndose."
+              >
+                <select
+                  class="rounded-full border border-white/10 bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white outline-none"
+                  value={String(almacen()?.cacheLimit ?? 0)}
+                  onChange={async (e) => {
+                    await api.setCacheLimit(Number(e.currentTarget.value));
+                    await cargarAlmacen();
+                  }}
+                >
+                  <For each={TOPES}>
+                    {([bytes, etiqueta]) => (
+                      <option value={String(bytes)} class="bg-neutral-900">
+                        {etiqueta}
+                      </option>
+                    )}
+                  </For>
+                </select>
               </Fila>
 
               <Fila

@@ -160,6 +160,19 @@ async fn browse(
         .map_err(|e| e.to_string())
 }
 
+/// Siguiente tanda de pistas de una pagina ya abierta.
+#[tauri::command]
+async fn browse_more(
+    state: tauri::State<'_, App>,
+    continuation: String,
+) -> Result<ytm_source::BrowsePage, String> {
+    state
+        .innertube
+        .browse_more(&continuation)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn play_queue(state: tauri::State<'_, App>, tracks: Vec<TrackInput>, start: usize) {
     tracing::info!(count = tracks.len(), start, "Comando play_queue recibido");
@@ -313,9 +326,19 @@ fn favorites(state: tauri::State<'_, App>) -> Result<Vec<db::SavedTrack>, String
 struct Storage {
     cache_bytes: u64,
     cache_files: u64,
+    /// Tope en bytes. 0 es sin limite.
+    cache_limit: u64,
     db_bytes: u64,
     cache_dir: String,
     data_dir: String,
+}
+
+/// Tope de la cache guardado, o el de fabrica si no hay ninguno.
+fn limite_cache(database: &db::Db) -> u64 {
+    database
+        .get_setting("cache_limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(ytm_audio::cache::DEFAULT_LIMIT)
 }
 
 /// Suma el tamanio de un directorio sin bajar a subdirectorios.
@@ -335,7 +358,7 @@ fn dir_size(dir: &std::path::Path) -> (u64, u64) {
 }
 
 #[tauri::command]
-fn storage_info() -> Storage {
+fn storage_info(state: tauri::State<'_, App>) -> Storage {
     let cache = ytm_audio::cache_dir();
     let datos = db::data_dir();
     let (cache_bytes, cache_files) = dir_size(&cache);
@@ -346,6 +369,7 @@ fn storage_info() -> Storage {
     Storage {
         cache_bytes,
         cache_files,
+        cache_limit: limite_cache(&state.db),
         db_bytes,
         cache_dir: cache.display().to_string(),
         data_dir: datos.display().to_string(),
@@ -371,6 +395,20 @@ fn clear_cache() -> Result<u64, String> {
         }
     }
     Ok(borrados)
+}
+
+/// Cambia el tope de la cache y recorta al momento si ya se pasaba.
+///
+/// Se guarda en la base de datos y no en `localStorage` porque quien tiene que
+/// respetarlo es el motor, que arranca antes que la interfaz.
+#[tauri::command]
+fn set_cache_limit(state: tauri::State<'_, App>, bytes: u64) -> Result<(), String> {
+    state
+        .db
+        .set_setting("cache_limit", &bytes.to_string())
+        .map_err(|e| e.to_string())?;
+    state.engine.send(Command::SetCacheLimit(bytes));
+    Ok(())
 }
 
 /// Version de la aplicacion, de `Cargo.toml`.
@@ -689,6 +727,7 @@ pub fn run() {
             if database.get_setting("shuffle").as_deref() == Some("true") {
                 engine.send(Command::SetShuffle(true));
             }
+            engine.send(Command::SetCacheLimit(limite_cache(&database)));
 
             // Esquinas redondeadas via DWM. La ventana dejo de ser transparente
             // (transparent + WebView2 se congela al restaurar desde minimizado
@@ -905,6 +944,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             search,
             search_more,
+            browse_more,
             search_suggestions,
             radio,
             set_up_next,
@@ -930,6 +970,7 @@ pub fn run() {
             favorites,
             history,
             storage_info,
+            set_cache_limit,
             clear_cache,
             app_version,
             create_playlist,

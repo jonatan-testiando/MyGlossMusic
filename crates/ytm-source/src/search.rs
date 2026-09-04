@@ -299,7 +299,7 @@ fn parse_chips(root: &Value) -> Vec<SearchChip> {
 /// YouTube usa dos formatos segun el endpoint y la version, asi que se miran
 /// los dos: el nuevo lo cuelga de `continuationEndpoint`, el viejo de
 /// `nextContinuationData`.
-fn parse_continuation(root: &Value) -> Option<String> {
+pub(crate) fn parse_continuation(root: &Value) -> Option<String> {
     let mut viejo = Vec::new();
     collect_by_key(root, "nextContinuationData", &mut viejo);
     if let Some(t) = viejo

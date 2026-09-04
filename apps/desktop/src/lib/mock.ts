@@ -154,6 +154,8 @@ const saved: SavedTrack[] = TRACKS.slice(0, 4).map((t, i) => ({
 }));
 let favs: SavedTrack[] = saved.slice(0, 2);
 
+let limiteFalso = 3 * 1024 * 1024 * 1024;
+
 export const mockApi = {
   playlist: async () => ({ title: "Playlist de prueba", tracks: results }),
   playQueue: async (_t: unknown[], start: number) => {
@@ -275,6 +277,8 @@ export const mockApi = {
       : null,
     description: browseId.startsWith("VL") ? "Las de siempre, hechas con cariño." : null,
     thumbnail: COVER,
+    // Solo las listas se parten en tandas, igual que en YouTube.
+    continuation: browseId.startsWith("VL") ? "tanda-2" : null,
     shelves: [
       {
         title: "Canciones populares",
@@ -300,6 +304,34 @@ export const mockApi = {
       },
     ],
   }),
+
+  // Dos tandas mas y se acaba: lo justo para probar que el encadenado para.
+  browseMore: async (continuation: string) => {
+    const n = Number(continuation.split("-")[1]);
+    return {
+      title: null,
+      subtitle: null,
+      secondSubtitle: null,
+      description: null,
+      thumbnail: null,
+      continuation: n < 3 ? `tanda-${n + 1}` : null,
+      shelves: [
+        {
+          title: "",
+          items: TRACKS.map((t, i) => ({
+            kind: "track" as const,
+            // Ids distintos por tanda: si se repitieran, el guardado los
+            // descartaria y la prueba pasaria sin probar nada.
+            id: `${t.videoId}-t${n}-${i}`,
+            title: `${t.title} (tanda ${n})`,
+            subtitle: t.author,
+            thumbnail: COVER,
+            duration: t.d,
+          })),
+        },
+      ],
+    };
+  },
 
   radio: async () => ({
     playlistId: "RDAMVMjig2aRZbHm4",
@@ -382,11 +414,15 @@ export const mockApi = {
   storageInfo: async () => ({
     cacheBytes: 348_127_232,
     cacheFiles: 61,
+    cacheLimit: limiteFalso,
     dbBytes: 172_032,
     cacheDir: "C:\\Users\\tu\\AppData\\Local\\posible-ytmusic\\audio",
     dataDir: "C:\\Users\\tu\\AppData\\Roaming\\posible-ytmusic",
   }),
   clearCache: async () => 61,
+  setCacheLimit: async (bytes: number) => {
+    limiteFalso = bytes;
+  },
   appVersion: async () => "0.1.0",
   extractorStatus: async () => ({ available: true, version: "2026.08.19", program: "yt-dlp.exe (sidecar)" }),
   minimize: async () => {},

@@ -76,12 +76,22 @@ pub struct Palette {
 }
 
 impl Default for Palette {
+    /// Paleta de la casa: la que se ve antes de que suene nada.
+    ///
+    /// Los tres tonos estan calculados en Oklab dentro de la MISMA banda de
+    /// luminosidad que impone [`ambient`] (0,52-0,78), no elegidos a ojo. Los
+    /// de antes vivian en 0,35 y dejaban la ventana practicamente negra, que es
+    /// justo lo que hay que evitar: la pantalla de bienvenida es lo primero que
+    /// se ve, y era lo mas apagado de toda la aplicacion.
+    ///
+    /// Solo se ve en el primer arranque. A partir del segundo manda la ultima
+    /// cancion escuchada, que la interfaz recupera del historial.
     fn default() -> Self {
         Self {
             stops: vec![
-                Stop { color: "#3b3358".into(), weight: 0.5 },
-                Stop { color: "#5b4a8a".into(), weight: 0.3 },
-                Stop { color: "#2a2740".into(), weight: 0.2 },
+                Stop { color: "#9470cd".into(), weight: 0.5 },
+                Stop { color: "#6e64c8".into(), weight: 0.3 },
+                Stop { color: "#c585bf".into(), weight: 0.2 },
             ],
             background: "#12101a".into(),
             background_alt: "#1c1826".into(),
@@ -448,6 +458,27 @@ pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Palette> {
 
 #[cfg(test)]
 mod tests {
+
+    /// La paleta de bienvenida tiene que cumplir lo mismo que las calculadas.
+    ///
+    /// Es la unica que se escribe a mano, asi que es la unica que puede quedarse
+    /// fuera de la banda sin que salte nada. Las anteriores vivian en 0,35 y la
+    /// ventana se abria casi negra.
+    #[test]
+    fn la_paleta_de_fabrica_esta_en_la_banda_del_fondo() {
+        for stop in Palette::default().stops {
+            let n = u32::from_str_radix(&stop.color[1..], 16).unwrap();
+            let c = rgb_to_oklab((n >> 16) as u8, (n >> 8) as u8, n as u8);
+            assert!(
+                (0.52..=0.78).contains(&c.l),
+                "{} tiene luminosidad {:.3}, fuera de la banda del fondo",
+                stop.color,
+                c.l
+            );
+            assert!(c.chroma() > NEUTRAL, "{} es practicamente gris", stop.color);
+        }
+    }
+
     use super::*;
 
     #[test]

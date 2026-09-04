@@ -35,11 +35,18 @@ const EMPTY_STATE: PlaybackState = {
   error: null,
 };
 
+/**
+ * Paleta de la casa, la misma que `Palette::default()` en Rust.
+ *
+ * Está repetida aquí a propósito: es lo que se pinta durante el primer
+ * fotograma, y esperar a que el backend la mande haría que el fondo arrancara
+ * apagado y se encendiera a la vista. Si se cambia una, hay que cambiar la otra.
+ */
 const DEFAULT_PALETTE: Palette = {
   stops: [
-    { color: "#3b3358", weight: 0.5 },
-    { color: "#5b4a8a", weight: 0.3 },
-    { color: "#2a2740", weight: 0.2 },
+    { color: "#9470cd", weight: 0.5 },
+    { color: "#6e64c8", weight: 0.3 },
+    { color: "#c585bf", weight: 0.2 },
   ],
   background: "#12101a",
   backgroundAlt: "#1c1826",
@@ -82,6 +89,8 @@ export const [browseLoading, setBrowseLoading] = createSignal(false);
 /** Id de la página abierta, para poder guardarla o volver a pedirla. */
 export const [browseId, setBrowseId] = createSignal<string | null>(null);
 export const [savingBrowse, setSavingBrowse] = createSignal(false);
+/** Sigue habiendo tandas en camino de la lista abierta. */
+export const [browseCompleting, setBrowseCompleting] = createSignal(false);
 
 /**
  * Canal del artista de lo que suena, para la pestaña SIMILARES.
@@ -257,20 +266,109 @@ export function openBrowse(browseId: string, titulo?: string) {
   navegar({ view: "browse", browseId, titulo });
 }
 
+/**
+ * Tope de tandas encadenadas.
+ *
+ * YouTube manda las listas de 100 en 100, así que son 5.000 pistas. Una lista
+ * de 551 son seis peticiones; el tope está para que una lista absurda no deje
+ * la aplicación pidiendo páginas para siempre.
+ */
+const MAX_TANDAS = 50;
+
+/**
+ * Generación de la carga en curso.
+ *
+ * Encadenar tandas tarda varios segundos, y en ese rato el usuario puede
+ * haberse ido a otra página. Sin esto, las pistas de la lista anterior
+ * aparecerían dentro de la nueva.
+ */
+let generacionBrowse = 0;
+
+/** Encadenado en curso, para que "Guardar" no copie media lista. */
+let tandasEnCurso: Promise<void> | null = null;
+
 async function cargarBrowse(id: string) {
+  const gen = ++generacionBrowse;
   setBrowseId(id);
   setBrowseLoading(true);
   // Se limpia antes de pedir: si no, se ve la página anterior con el título
   // nuevo mientras carga, que parece un fallo.
   setBrowsePage(null);
   try {
-    setBrowsePage(await api.browse(id));
+    const primera = await api.browse(id);
+    if (gen !== generacionBrowse) return;
+    setBrowsePage(primera);
+    setBrowseLoading(false);
+    tandasEnCurso = completarBrowse(gen, primera.continuation);
+    await tandasEnCurso;
   } catch (e) {
     console.error("no se pudo abrir la pagina", e);
-    setBrowsePage(null);
+    if (gen === generacionBrowse) setBrowsePage(null);
   } finally {
-    setBrowseLoading(false);
+    if (gen === generacionBrowse) setBrowseLoading(false);
   }
+}
+
+/**
+ * Pide el resto de tandas y las va pegando a la lista.
+ *
+ * Se pintan según llegan en vez de esperar a tenerlas todas: en una lista de
+ * 551 pistas son seis peticiones, y ver las 100 primeras al instante es mejor
+ * que mirar un hueco durante varios segundos.
+ */
+async function completarBrowse(gen: number, primerToken: string | null) {
+  let token = primerToken;
+  if (!token) return;
+
+  setBrowseCompleting(true);
+  try {
+    for (let tanda = 0; token && tanda < MAX_TANDAS; tanda++) {
+      let siguiente: BrowsePage;
+      try {
+        siguiente = await api.browseMore(token);
+      } catch (e) {
+        // Media lista es mejor que ninguna: se deja lo que haya llegado.
+        console.error("se cortó la lista al pedir más pistas", e);
+        return;
+      }
+      if (gen !== generacionBrowse) return;
+
+      const nuevas = siguiente.shelves.flatMap((e) => e.items);
+      if (!nuevas.length) return;
+      setBrowsePage((actual) => (actual ? pegarPistas(actual, nuevas) : actual));
+      token = siguiente.continuation;
+    }
+  } finally {
+    if (gen === generacionBrowse) setBrowseCompleting(false);
+  }
+}
+
+/**
+ * Añade pistas al final de la última estantería que ya tenía pistas.
+ *
+ * Objeto nuevo y no mutación: las señales de Solid comparan por referencia, y
+ * mutando el que ya está dentro no se repintaría nada.
+ */
+function pegarPistas(pagina: BrowsePage, nuevas: BrowsePage["shelves"][number]["items"]) {
+  let destino = -1;
+  pagina.shelves.forEach((e, i) => {
+    if (e.items.some((t) => t.kind === "track")) destino = i;
+  });
+
+  const vistos = new Set(
+    pagina.shelves.flatMap((e) => e.items.map((i) => `${i.kind}:${i.id}`)),
+  );
+  const sinRepetir = nuevas.filter((i) => vistos.has(`${i.kind}:${i.id}`) === false);
+  if (!sinRepetir.length) return pagina;
+
+  const shelves =
+    destino === -1
+      ? [...pagina.shelves, { title: "", items: sinRepetir }]
+      : pagina.shelves.map((e, i) =>
+          i === destino ? { ...e, items: [...e.items, ...sinRepetir] } : e,
+        );
+
+  return { ...pagina, shelves };
 }
 
 /**
@@ -281,13 +379,26 @@ async function cargarBrowse(id: string) {
  * si el original cambia.
  */
 export async function saveBrowseAsPlaylist(nombre?: string) {
-  const pagina = browsePage();
-  if (!pagina || savingBrowse()) return;
-
-  const pistas = pagina.shelves.flatMap((e) => e.items.filter((i) => i.kind === "track"));
-  if (!pistas.length) return;
+  if (!browsePage() || savingBrowse()) return;
 
   setSavingBrowse(true);
+  // Antes de copiar nada hay que tener la lista entera: si el usuario pulsa
+  // Guardar a los dos segundos de abrir una lista de 551 pistas, sin esto se
+  // llevaría las 100 primeras y creería que están todas.
+  await tandasEnCurso?.catch(() => {});
+
+  const pagina = browsePage();
+  if (!pagina) {
+    setSavingBrowse(false);
+    return;
+  }
+
+  const pistas = pagina.shelves.flatMap((e) => e.items.filter((i) => i.kind === "track"));
+  if (!pistas.length) {
+    setSavingBrowse(false);
+    return;
+  }
+
   try {
     const id = await api.createPlaylist(nombre ?? pagina.title ?? "Playlist guardada");
     // En serie y no en paralelo: `position` sale de un MAX sobre la tabla, y
@@ -310,6 +421,41 @@ export async function saveBrowseAsPlaylist(nombre?: string) {
     setSavingBrowse(false);
   }
 }
+/**
+ * Ultima pista escuchada, recuperada del historial al arrancar.
+ *
+ * # Por que no se reanuda sola
+ *
+ * Al abrir la aplicacion NO suena nada. Un programa que empieza a hacer ruido
+ * en cuanto se abre es de las cosas mas molestas que puede hacer un
+ * reproductor, y basta con que lo abras una vez en una reunion para no
+ * perdonarlo.
+ *
+ * Pero dejar la ventana en negro tampoco vale: la portada, sus colores y el
+ * titulo se restauran, y el boton de reproducir arranca justo esa cancion. Se
+ * ve como la dejaste, sin sonar.
+ *
+ * Desde el principio, no por donde ibas: guardar la posicion exacta exigiria
+ * escribirla en disco constantemente, y volver a una cancion por la mitad rara
+ * vez es lo que uno quiere al dia siguiente.
+ */
+export const [pendiente, setPendiente] = createSignal<Track | null>(null);
+
+/**
+ * La pista que la interfaz debe MOSTRAR.
+ *
+ * Lo que suena si hay algo sonando; si no, lo ultimo que sono. Todo lo visual
+ * —portada, paleta, fondo, titulo— tira de aqui; los controles siguen mirando
+ * `playback`, porque una pista recuperada no esta cargada en el motor.
+ */
+export const trackVisible = (): Track | null => playback.track ?? pendiente();
+
+/** Arranca la pista recuperada del historial. */
+export function reanudarPendiente() {
+  const t = pendiente();
+  if (t) api.playQueue([t], 0);
+}
+
 export const [isFavorite, setIsFavorite] = createSignal(false);
 export const [resultsLabel, setResultsLabel] = createSignal<string | null>(null);
 
@@ -377,6 +523,24 @@ export function initStore() {
   refreshPlaylists();
   api.getState().then((s) => setPlayback(reconcile(adoptQueue(s))));
 
+  // La ultima escuchada, para que la ventana no se abra en negro. No se
+  // comprueba si el motor tiene algo: `trackVisible` ya da preferencia a lo que
+  // suene de verdad.
+  api
+    .history()
+    .then(([ultima]) => {
+      if (ultima) {
+        setPendiente({
+          videoId: ultima.videoId,
+          title: ultima.title,
+          author: ultima.author,
+          thumbnail: ultima.thumbnail,
+          durationMs: null,
+        });
+      }
+    })
+    .catch(() => {});
+
   api.onPlayback((s) => {
     setPlayback(reconcile(adoptQueue(s)));
     lastSync = { at: performance.now(), ms: s.positionMs };
@@ -407,7 +571,7 @@ export function initStore() {
   // La paleta se recalcula solo cuando cambia la portada, no en cada estado.
   createEffect(
     on(
-      () => playback.track?.thumbnail,
+      () => trackVisible()?.thumbnail,
       (thumb) => {
         if (!thumb) {
           setPalette(DEFAULT_PALETTE);
@@ -681,12 +845,12 @@ export function coverUrl(width = 1280): string | null {
   // Sin forzar proporcion: la portada se pinta con la suya, cuadrada si es de
   // album y 16:9 si es de video. Forzar una relacion aqui obliga al servidor a
   // rellenar con barras negras, y esas barras van dentro del JPEG.
-  return thumbAt(playback.track?.thumbnail, width, Math.round((width * 9) / 16));
+  return thumbAt(trackVisible()?.thumbnail, width, Math.round((width * 9) / 16));
 }
 
 /** Respaldo de la portada cuando el servidor no tiene la variante grande. */
 export function coverFallbackUrl(): string | null {
-  const raw = playback.track?.thumbnail;
+  const raw = trackVisible()?.thumbnail;
   if (!raw) return null;
   const alt = thumbFallback(raw);
   return alt ? thumbAt(alt, 320, 180) : null;
