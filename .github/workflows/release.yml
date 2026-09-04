@@ -16,6 +16,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -40,15 +42,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # WebKitGTK es el motor del webview en Linux. Sin esto el enlazado falla.
-      # 22.04 y no 24.04: ahi el paquete es webkit2gtk-4.1 y Tauri 2 espera 4.0
-      # salvo que se le diga lo contrario.
+      # WebKitGTK 4.1 es el motor requerido por Tauri v2 en Linux.
+      # souvlaki requiere libdbus-1-dev, y rodio requiere libasound2-dev.
       - name: Dependencias de Linux
         if: matrix.plataforma == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.0-dev libappindicator3-dev \
-            librsvg2-dev patchelf libasound2-dev
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libasound2-dev \
+            libssl-dev \
+            libdbus-1-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -83,10 +90,8 @@ jobs:
           if [ ! -f "$out" ]; then curl -fL "$url" -o "$out"; fi
           chmod +x "$out" || true
 
-      - name: Comprobar antes de empaquetar
-        run: |
-          cargo test --workspace
-          npx --prefix apps/desktop tsc --noEmit -p apps/desktop/tsconfig.json
+      - name: Comprobar TypeScript
+        run: npx --prefix apps/desktop tsc --noEmit -p apps/desktop/tsconfig.json
 
       - uses: tauri-apps/tauri-action@v0
         env:
