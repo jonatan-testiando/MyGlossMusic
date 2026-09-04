@@ -423,6 +423,57 @@ fn set_cache_limit(state: tauri::State<'_, App>, bytes: u64) -> Result<(), Strin
     Ok(())
 }
 
+/// Cuantas pistas rotas se arreglan por arranque.
+///
+/// Son peticiones de 9 KB, pero en serie y con pausa: esto corre mientras el
+/// usuario esta usando la aplicacion y no debe competir con lo que pida el.
+/// Cuarenta cubren de sobra el historial visible; si quedan mas, caen en el
+/// siguiente arranque.
+const REPARAR_POR_ARRANQUE: usize = 40;
+
+/// Recupera el nombre de las pistas que se guardaron sin el.
+///
+/// Solo arregla lo VIEJO: las nuevas ya no pueden guardarse rotas desde que el
+/// motor pide los metadatos aparte. Esto existe porque una base de datos ya
+/// creada arrastra las que se guardaron antes, y esas no se arreglan solas.
+fn reparar_metadatos(
+    handle: tauri::AppHandle,
+    db: Arc<db::Db>,
+    it: ytm_source::InnerTube,
+) {
+    tauri::async_runtime::spawn(async move {
+        let pendientes = match db.tracks_sin_titulo(REPARAR_POR_ARRANQUE) {
+            Ok(v) if !v.is_empty() => v,
+            _ => return,
+        };
+        tracing::info!(cuantas = pendientes.len(), "reparando metadatos guardados");
+
+        let mut arregladas = 0;
+        for id in pendientes {
+            match ytm_source::metadata(&it, &id).await {
+                Ok(m) => {
+                    let title = m.title.unwrap_or_default();
+                    if title.is_empty() {
+                        continue; // sigue sin saberse; no se pisa con vacio
+                    }
+                    let author = m.author.unwrap_or_else(|| ytm_audio::SIN_AUTOR.to_string());
+                    if db.fill_track_meta(&id, &title, &author, m.thumbnail.as_deref()).is_ok() {
+                        arregladas += 1;
+                    }
+                }
+                Err(e) => tracing::debug!(video_id = %id, error = %e, "sin metadatos"),
+            }
+            // Con calma: esto es trabajo de fondo, no urge.
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+
+        if arregladas > 0 {
+            tracing::info!(arregladas, "metadatos recuperados");
+            let _ = handle.emit("biblioteca", ());
+        }
+    });
+}
+
 /// Iguala el volumen entre pistas, o deja de hacerlo.
 #[tauri::command]
 fn set_normalize(state: tauri::State<'_, App>, on: bool) -> Result<(), String> {
@@ -767,6 +818,8 @@ pub fn run() {
             engine.send(Command::SetCacheLimit(limite_cache(&database)));
             // Igualar volumen viene puesto: hay casi 6 dB entre unas pistas y
             // otras, y quien no lo quiera lo apaga en Ajustes.
+            reparar_metadatos(app.handle().clone(), Arc::clone(&database), innertube.clone());
+
             engine.send(Command::SetNormalize(
                 database.get_setting("normalize").as_deref() != Some("false"),
             ));
@@ -894,6 +947,8 @@ pub fn run() {
             let db_for_task = Arc::clone(&database);
             tauri::async_runtime::spawn(async move {
                 let mut last_track: Option<String> = None;
+                // La pista actual se guardo sin nombre y hay que corregirla si llega.
+                let mut titulo_pendiente = false;
                 let mut last_prefs = (f32::NAN, String::new(), false);
                 let mut last_sent_rev: Option<u64> = None;
                 let mut last_media = (String::new(), false);
@@ -949,6 +1004,7 @@ pub fn run() {
                     if let Some(t) = &state.track {
                         if last_track.as_deref() != Some(t.video_id.as_str()) {
                             last_track = Some(t.video_id.clone());
+                            titulo_pendiente = ytm_audio::falta_el_titulo(&t.title);
                             let _ = db_for_task.push_history(&db::SavedTrack {
                                 video_id: t.video_id.clone(),
                                 title: t.title.clone(),
@@ -956,6 +1012,18 @@ pub fn run() {
                                 thumbnail: t.thumbnail.clone(),
                                 at: 0,
                             });
+                        } else if titulo_pendiente && !ytm_audio::falta_el_titulo(&t.title) {
+                            // El nombre ha llegado despues de guardar la fila.
+                            // Sin esto, la pista queda en el historial como
+                            // "Sin titulo" aunque en pantalla ya se lea bien.
+                            titulo_pendiente = false;
+                            let _ = db_for_task.fill_track_meta(
+                                &t.video_id,
+                                &t.title,
+                                &t.author,
+                                t.thumbnail.as_deref(),
+                            );
+                            let _ = handle.emit("biblioteca", ());
                         }
                     }
 

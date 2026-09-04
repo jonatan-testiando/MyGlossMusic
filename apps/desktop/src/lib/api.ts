@@ -263,6 +263,8 @@ const realApi = {
 
   onPlayback: (cb: (s: PlaybackState) => void) =>
     listen<PlaybackState>("playback", (e) => cb(e.payload)),
+  /** Algo guardado ha cambiado por su cuenta: historial, favoritos, playlists. */
+  onLibrary: (cb: () => void) => listen("biblioteca", () => cb()),
 };
 
 /**

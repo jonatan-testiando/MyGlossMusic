@@ -172,12 +172,26 @@ pub struct Track {
     pub duration_ms: Option<u64>,
 }
 
+/// Lo que se pinta mientras no se sabe como se llama la pista.
+///
+/// Son constantes y no literales sueltos porque hay que poder RECONOCERLOS
+/// despues: el historial guarda el titulo tal cual, y sin poder distinguir
+/// "no lo sabemos" de un nombre de verdad, una pista que se guardo antes de
+/// que llegaran sus metadatos se queda asi para siempre.
+pub const SIN_TITULO: &str = "Sin titulo";
+pub const SIN_AUTOR: &str = "Desconocido";
+
+/// `true` si el titulo es el de relleno y merece un segundo intento.
+pub fn falta_el_titulo(title: &str) -> bool {
+    title.is_empty() || title == SIN_TITULO
+}
+
 impl From<&TrackInfo> for Track {
     fn from(t: &TrackInfo) -> Self {
         Self {
             video_id: t.video_id.clone(),
-            title: t.title.clone().unwrap_or_else(|| "Sin titulo".into()),
-            author: t.author.clone().unwrap_or_else(|| "Desconocido".into()),
+            title: t.title.clone().unwrap_or_else(|| SIN_TITULO.into()),
+            author: t.author.clone().unwrap_or_else(|| SIN_AUTOR.into()),
             thumbnail: t.thumbnail.clone(),
             duration_ms: t.duration_ms,
         }

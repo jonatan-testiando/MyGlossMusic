@@ -166,6 +166,61 @@ impl Db {
         Ok(rows.filter_map(Result::ok).collect())
     }
 
+    // ------------------------------------------------------- metadatos rotos
+
+    /// Pistas guardadas de las que no se llego a saber el nombre.
+    ///
+    /// Antes de que existiera el repuesto de metadatos, una pista cuyo stream
+    /// no se pudo resolver se guardaba con el titulo de relleno, y ahi se
+    /// quedaba. Esto las encuentra para poder arreglarlas.
+    pub fn tracks_sin_titulo(&self, limit: usize) -> Result<Vec<String>> {
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("mutex envenenado"))?;
+        let mut stmt = conn.prepare(
+            "SELECT video_id, MAX(cuando) FROM (
+                 SELECT video_id, title, played_at AS cuando FROM history
+                 UNION ALL
+                 SELECT video_id, title, added_at   AS cuando FROM favorites
+                 UNION ALL
+                 SELECT video_id, title, added_at   AS cuando FROM playlist_items
+             )
+             WHERE title = ?1 OR title = ''
+             GROUP BY video_id
+             ORDER BY 2 DESC
+             LIMIT ?2",
+        )?;
+        let filas = stmt
+            .query_map(params![ytm_audio::SIN_TITULO, limit as i64], |r| r.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(filas)
+    }
+
+    /// Rellena el nombre de una pista alla donde se haya guardado sin el.
+    ///
+    /// Las tres tablas a la vez: la misma cancion puede estar en el historial,
+    /// en favoritos y en varias playlists, y arreglarla en una sola dejaria las
+    /// otras con el "Sin titulo".
+    pub fn fill_track_meta(
+        &self,
+        video_id: &str,
+        title: &str,
+        author: &str,
+        thumbnail: Option<&str>,
+    ) -> Result<usize> {
+        let conn = self.conn.lock().map_err(|_| anyhow::anyhow!("mutex envenenado"))?;
+        let mut tocadas = 0;
+        for tabla in ["history", "favorites", "playlist_items"] {
+            tocadas += conn.execute(
+                &format!(
+                    "UPDATE {tabla} SET title = ?1, author = ?2,
+                            thumbnail = COALESCE(?3, thumbnail)
+                     WHERE video_id = ?4 AND (title = ?5 OR title = '')"
+                ),
+                params![title, author, thumbnail, video_id, ytm_audio::SIN_TITULO],
+            )?;
+        }
+        Ok(tocadas)
+    }
+
     // -------------------------------------------------------------- historial
 
     /// Registra una reproduccion, evitando duplicar la misma pista seguida.

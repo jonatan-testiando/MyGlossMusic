@@ -34,6 +34,7 @@ import {
   browsePage,
   browseCompleting,
   browseLoading,
+  bibliotecaRev,
   browseId,
   browseTitulo,
   openBrowse,
@@ -623,6 +624,18 @@ export function HomeFeed() {
     asentar(await seguro(() => api.browse(HOME, chip?.params), VACIO), true);
     setCargando(false);
   };
+
+  // Al arreglarse los metadatos guardados, "Volver a escuchar" y la semilla
+  // del mix siguen mostrando el "Sin título" viejo hasta releer.
+  createEffect(
+    on(
+      bibliotecaRev,
+      () => {
+        api.history().then(setHistorial).catch(() => {});
+      },
+      { defer: true },
+    ),
+  );
 
   onMount(() => {
     // El centinela dispara cuando asoma por abajo. Igual que en la búsqueda: un

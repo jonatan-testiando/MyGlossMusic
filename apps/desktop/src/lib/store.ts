@@ -48,13 +48,13 @@ const EMPTY_STATE: PlaybackState = {
  */
 const DEFAULT_PALETTE: Palette = {
   stops: [
-    { color: "#9470cd", weight: 0.5 },
-    { color: "#6e64c8", weight: 0.3 },
-    { color: "#c585bf", weight: 0.2 },
+    { color: "#373e6a", weight: 0.5 },
+    { color: "#1c354e", weight: 0.3 },
+    { color: "#584a71", weight: 0.2 },
   ],
-  background: "#12101a",
-  backgroundAlt: "#1c1826",
-  accent: "#8b7fd4",
+  background: "#111524",
+  backgroundAlt: "#1d2337",
+  accent: "#9792ec",
   foreground: "#f4f2fa",
   isLight: false,
 };
@@ -550,6 +550,15 @@ export function togglePlayerView(abrir: boolean, animar = true) {
   else cambiar();
 }
 
+/**
+ * Contador que sube cada vez que cambia algo guardado por detrás.
+ *
+ * Las vistas que leen del historial o de favoritos lo miran para volver a
+ * pedirlos. Un contador y no los datos: quien los necesita ya sabe pedirlos, y
+ * así no hay dos copias de lo mismo en el store.
+ */
+export const [bibliotecaRev, setBibliotecaRev] = createSignal(0);
+
 export const [isFavorite, setIsFavorite] = createSignal(false);
 export const [resultsLabel, setResultsLabel] = createSignal<string | null>(null);
 
@@ -637,6 +646,14 @@ export function initStore() {
       }
     })
     .catch(() => {});
+
+  // El backend arregla en segundo plano las pistas que se guardaron sin
+  // nombre. Cuando termina hay que releer, o se seguiria viendo "Sin titulo"
+  // hasta el siguiente arranque.
+  api.onLibrary(() => {
+    refreshPlaylists();
+    setBibliotecaRev((n) => n + 1);
+  });
 
   api.onPlayback((s) => {
     setPlayback(reconcile(adoptQueue(s)));

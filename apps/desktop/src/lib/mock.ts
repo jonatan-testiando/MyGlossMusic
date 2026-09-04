@@ -423,6 +423,7 @@ export const mockApi = {
       thumbnail: COVER,
     })),
   }),
+  onLibrary: () => Promise.resolve(() => {}),
   setUpNext: async () => {},
   playNext: async () => {},
   enqueue: async () => {},

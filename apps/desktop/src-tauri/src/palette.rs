@@ -76,26 +76,37 @@ pub struct Palette {
 }
 
 impl Default for Palette {
-    /// Paleta de la casa: la que se ve antes de que suene nada.
+    /// La aplicacion en reposo: lo que se ve cuando no suena nada.
     ///
-    /// Los tres tonos estan calculados en Oklab dentro de la MISMA banda de
-    /// luminosidad que impone [`ambient`] (0,52-0,78), no elegidos a ojo. Los
-    /// de antes vivian en 0,35 y dejaban la ventana practicamente negra, que es
-    /// justo lo que hay que evitar: la pantalla de bienvenida es lo primero que
-    /// se ve, y era lo mas apagado de toda la aplicacion.
+    /// # Por que es oscura
+    ///
+    /// Hubo dos intentos antes. El primero vivia en luminosidad 0,35 con muy
+    /// poco croma y era barro: ni oscuro ni de color. Corrigiendolo me pase al
+    /// otro lado y lo subi a la banda de las canciones (0,52-0,78), y entonces
+    /// la ventana vacia era un violeta encendido a pantalla completa — mas
+    /// llamativa sin musica que con ella.
+    ///
+    /// El acierto no era ni una cosa ni la otra. Toda la aplicacion se sostiene
+    /// sobre una idea: la ventana se tine con la cancion. Si el reposo ya grita,
+    /// poner una cancion deja de ser un cambio. Asi que va OSCURA, pero limpia:
+    /// luminosidad 0,32-0,44 con croma suficiente para que se lea como azul y
+    /// no como gris sucio. Calculado en Oklab, no elegido a ojo.
+    ///
+    /// Y no compite con ninguna portada: ninguna paleta calculada baja de 0,52,
+    /// asi que el reposo siempre se distingue de cualquier cancion.
     ///
     /// Solo se ve en el primer arranque. A partir del segundo manda la ultima
     /// cancion escuchada, que la interfaz recupera del historial.
     fn default() -> Self {
         Self {
             stops: vec![
-                Stop { color: "#9470cd".into(), weight: 0.5 },
-                Stop { color: "#6e64c8".into(), weight: 0.3 },
-                Stop { color: "#c585bf".into(), weight: 0.2 },
+                Stop { color: "#373e6a".into(), weight: 0.5 }, // indigo profundo
+                Stop { color: "#1c354e".into(), weight: 0.3 }, // pizarra azulada
+                Stop { color: "#584a71".into(), weight: 0.2 }, // violeta apagado
             ],
-            background: "#12101a".into(),
-            background_alt: "#1c1826".into(),
-            accent: "#8b7fd4".into(),
+            background: "#111524".into(),
+            background_alt: "#1d2337".into(),
+            accent: "#9792ec".into(),
             foreground: "#f4f2fa".into(),
             is_light: false,
         }
@@ -453,23 +464,28 @@ pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Palette> {
 #[cfg(test)]
 mod tests {
 
-    /// La paleta de bienvenida tiene que cumplir lo mismo que las calculadas.
+    /// El reposo tiene que ser oscuro y aun asi tener color.
     ///
-    /// Es la unica que se escribe a mano, asi que es la unica que puede quedarse
-    /// fuera de la banda sin que salte nada. Las anteriores vivian en 0,35 y la
-    /// ventana se abria casi negra.
+    /// Es la unica paleta escrita a mano, asi que es la unica que puede irse a
+    /// cualquier sitio sin que salte nada. Y se ha ido dos veces: una a barro
+    /// gris y otra a un violeta encendido a pantalla completa. Las dos cosas
+    /// que hay que sostener son estas.
     #[test]
-    fn la_paleta_de_fabrica_esta_en_la_banda_del_fondo() {
+    fn la_paleta_de_reposo_es_oscura_pero_no_gris() {
         for stop in Palette::default().stops {
             let n = u32::from_str_radix(&stop.color[1..], 16).unwrap();
             let c = rgb_to_oklab((n >> 16) as u8, (n >> 8) as u8, n as u8);
+
+            // Por debajo de la banda de cualquier cancion: poner musica tiene
+            // que notarse como que la ventana se enciende.
             assert!(
-                (0.52..=0.78).contains(&c.l),
-                "{} tiene luminosidad {:.3}, fuera de la banda del fondo",
+                c.l < 0.52,
+                "{} tiene luminosidad {:.3} y compite con una portada",
                 stop.color,
                 c.l
             );
-            assert!(c.chroma() > NEUTRAL, "{} es practicamente gris", stop.color);
+            assert!(c.l > 0.20, "{} es practicamente negro", stop.color);
+            assert!(c.chroma() > NEUTRAL, "{} es gris sucio", stop.color);
         }
     }
 
