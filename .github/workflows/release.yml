@@ -57,6 +57,11 @@ jobs:
             libssl-dev \
             libdbus-1-dev
 
+      # audiopus_sys requiere autoreconf (autoconf, automake, libtool) para compilar opus en macOS.
+      - name: Dependencias de macOS
+        if: startsWith(matrix.plataforma, 'macos')
+        run: brew install autoconf automake libtool
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.triple }}
