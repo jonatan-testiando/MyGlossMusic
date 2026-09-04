@@ -227,6 +227,14 @@ export const Refresh = svg(() =>
   false,
 );
 
+export const Pencil = svg(() => 
+  <>
+    <path d="M4 20h4l10.5-10.5a2.83 2.83 0 0 0-4-4L4 16z" />
+    <path d="m13.5 6.5 4 4" />
+  </>,
+  false,
+);
+
 export const Trash = svg(() => 
   <>
     <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />

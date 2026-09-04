@@ -186,6 +186,23 @@ export async function deletePlaylist(id: number) {
   }
 }
 
+export async function renamePlaylist(id: number, name: string) {
+  const limpio = name.trim();
+  if (!limpio) return;
+  try {
+    await api.renamePlaylist(id, limpio);
+    await refreshPlaylists();
+    // La abierta lleva su propia copia del nombre: sin esto, la cabecera
+    // seguiría mostrando el viejo hasta salir y volver a entrar.
+    const abierta = openPlaylist();
+    if (abierta?.lista.id === id) {
+      setOpenPlaylist({ ...abierta, lista: { ...abierta.lista, name: limpio } });
+    }
+  } catch (e) {
+    console.error("no se pudo renombrar la playlist", e);
+  }
+}
+
 export async function showPlaylist(lista: Playlist) {
   navegar({ view: "playlist" });
   try {

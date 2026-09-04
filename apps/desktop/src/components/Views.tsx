@@ -1,4 +1,5 @@
 import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
+import { PlaylistMenu } from "./Playlists";
 import {
   api,
   thumbAt,
@@ -363,16 +364,19 @@ export function Sidebar() {
 
           <For each={playlists()}>
             {(l) => (
-              <button
-                class="flex w-full flex-col rounded-xl px-2.5 py-2 text-left transition-colors hover:bg-white/10"
-                onClick={() => showPlaylist(l)}
-                title={l.name}
-              >
-                <span class="truncate text-xs font-medium text-white/85">{l.name}</span>
-                <span class="text-[10.5px] text-white/45">
-                  {l.count} {l.count === 1 ? "canción" : "canciones"}
-                </span>
-              </button>
+              <div class="group flex items-center rounded-xl pr-1 transition-colors hover:bg-white/10">
+                <button
+                  class="flex min-w-0 flex-1 flex-col px-2.5 py-2 text-left"
+                  onClick={() => showPlaylist(l)}
+                  title={l.name}
+                >
+                  <span class="truncate text-xs font-medium text-white/85">{l.name}</span>
+                  <span class="text-[10.5px] text-white/45">
+                    {l.count} {l.count === 1 ? "canción" : "canciones"}
+                  </span>
+                </button>
+                <PlaylistMenu lista={l} class="shrink-0 opacity-0 group-hover:opacity-100" />
+              </div>
             )}
           </For>
         </div>
@@ -1122,7 +1126,15 @@ export function LibraryView() {
           <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
             <For each={playlists()}>
               {(l) => (
-                <button class="group flex flex-col text-left" onClick={() => showPlaylist(l)}>
+                <div class="group relative flex flex-col text-left">
+                  {/* Encima de la portada, como en YouTube Music: la tarjeta
+                      entera abre la lista, así que el menú no puede ir dentro
+                      del botón — un botón dentro de otro no es HTML válido. */}
+                  <PlaylistMenu
+                    lista={l}
+                    class="absolute right-1.5 top-1.5 z-10 rounded-full bg-black/45 opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100"
+                  />
+                  <button class="flex flex-col text-left" onClick={() => showPlaylist(l)}>
                   <div class="relative aspect-square w-full overflow-hidden rounded-xl shadow-lg ring-1 ring-white/10">
                     <Show
                       when={l.thumbnail}
@@ -1143,7 +1155,8 @@ export function LibraryView() {
                   <div class="truncate text-[11.5px] text-white/50">
                     {l.count} {l.count === 1 ? "canción" : "canciones"}
                   </div>
-                </button>
+                  </button>
+                </div>
               )}
             </For>
           </div>

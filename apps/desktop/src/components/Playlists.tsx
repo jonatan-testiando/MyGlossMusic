@@ -1,5 +1,6 @@
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
-import { thumbAt } from "../lib/api";
+import { Portal } from "solid-js/web";
+import { thumbAt, type Playlist } from "../lib/api";
 import {
   addTrackToPlaylist,
   addingTo,
@@ -9,6 +10,7 @@ import {
   playSaved,
   playlists,
   removeTrackFromPlaylist,
+  renamePlaylist,
   setAddingTo,
   setCreatingPlaylist,
   showPlaylist,
@@ -175,6 +177,209 @@ export function AddToPlaylistDialog() {
   );
 }
 
+/**
+ * Menú de una playlist: cambiar nombre y eliminar.
+ *
+ * Va en los tres sitios donde aparece una lista — barra lateral, biblioteca y
+ * su propia cabecera — porque antes borrar solo se podía desde una papelera sin
+ * etiqueta dentro de la lista, y no había forma humana de dar con ella.
+ */
+export function PlaylistMenu(p: { lista: Playlist; class?: string }) {
+  const [abierto, setAbierto] = createSignal(false);
+  const [renombrando, setRenombrando] = createSignal(false);
+  const [borrando, setBorrando] = createSignal(false);
+  const [sitio, setSitio] = createSignal({ top: 0, left: 0 });
+  let raiz!: HTMLDivElement;
+  let boton!: HTMLButtonElement;
+  // El menu vive en un portal, fuera de `raiz`: sin comprobarlo aparte, pulsar
+  // dentro del propio menu contaria como pulsar fuera y lo cerraria.
+  let flotante: HTMLDivElement | undefined;
+
+  onMount(() => {
+    const fuera = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!raiz.contains(t) && !flotante?.contains(t)) setAbierto(false);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAbierto(false);
+    };
+    // Al desplazar o redimensionar el menu se cerraria en un sitio que ya no
+    // corresponde al boton, asi que se cierra.
+    const cerrar = () => setAbierto(false);
+    window.addEventListener("mousedown", fuera);
+    window.addEventListener("keydown", escape);
+    window.addEventListener("scroll", cerrar, true);
+    window.addEventListener("resize", cerrar);
+    onCleanup(() => {
+      window.removeEventListener("mousedown", fuera);
+      window.removeEventListener("keydown", escape);
+      window.removeEventListener("scroll", cerrar, true);
+      window.removeEventListener("resize", cerrar);
+    });
+  });
+
+  const ANCHO = 224; // w-56
+  const ALTO = 96; // dos filas
+
+  /**
+   * Coloca el menu en coordenadas de ventana.
+   *
+   * El menu se pinta en un `Portal` colgado de `body`, no donde esta el boton.
+   * Hace falta por dos razones que se dan a la vez en la barra lateral: la
+   * lista desplaza su contenido, asi que el desbordamiento recortaba el menu, y
+   * la barra mide 145 px cuando el menu mide 224. `position: fixed` a secas no
+   * bastaba — algun ancestro con `backdrop-filter` se convierte en su bloque
+   * contenedor y vuelve a recortarlo.
+   */
+  const alternar = () => {
+    if (abierto()) return setAbierto(false);
+    const r = boton.getBoundingClientRect();
+    const left = Math.max(8, Math.min(r.right - ANCHO, window.innerWidth - ANCHO - 8));
+    // Debajo del boton salvo que no quepa, en cuyo caso encima.
+    const top = r.bottom + ALTO > window.innerHeight - 8 ? r.top - ALTO - 4 : r.bottom + 4;
+    setSitio({ top, left });
+    setAbierto(true);
+  };
+
+  const acciones = [
+    { etiqueta: "Cambiar nombre", icono: I.Pencil, hacer: () => setRenombrando(true) },
+    { etiqueta: "Eliminar playlist", icono: I.Trash, hacer: () => setBorrando(true) },
+  ];
+
+  return (
+    <div ref={raiz} class={p.class}>
+      <button
+        ref={boton}
+        class="icon-btn size-7 text-white/45 hover:!bg-white/10 hover:text-white"
+        onClick={(e) => {
+          e.stopPropagation();
+          alternar();
+        }}
+        title="Opciones de la playlist"
+      >
+        <I.More size={15} />
+      </button>
+
+      <Show when={abierto()}>
+        <Portal>
+          <div
+            ref={(el) => (flotante = el)}
+            class="glass-card fixed z-50 w-56 overflow-hidden rounded-xl py-1 shadow-2xl"
+            style={{ top: `${sitio().top}px`, left: `${sitio().left}px` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {acciones.map((a) => (
+              <button
+                class="flex w-full items-center gap-3 px-3.5 py-2.5 text-left text-[13px] font-medium text-white/85 transition-colors hover:bg-white/[0.09]"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAbierto(false);
+                  a.hacer();
+                }}
+              >
+                <a.icono size={15} class="shrink-0 text-white/50" />
+                {a.etiqueta}
+              </button>
+            ))}
+          </div>
+        </Portal>
+      </Show>
+
+      <Show when={renombrando()}>
+        <RenamePlaylistDialog lista={p.lista} onClose={() => setRenombrando(false)} />
+      </Show>
+      <Show when={borrando()}>
+        <DeletePlaylistDialog lista={p.lista} onClose={() => setBorrando(false)} />
+      </Show>
+    </div>
+  );
+}
+
+function RenamePlaylistDialog(p: { lista: Playlist; onClose: () => void }) {
+  const [nombre, setNombre] = createSignal(p.lista.name);
+  let campo!: HTMLInputElement;
+
+  onMount(() => {
+    campo.focus();
+    campo.select();
+  });
+
+  return (
+    <Modal title="Cambiar nombre" onClose={p.onClose}>
+      <form
+        class="space-y-4 p-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          renamePlaylist(p.lista.id, nombre());
+          p.onClose();
+        }}
+      >
+        <input
+          ref={campo}
+          value={nombre()}
+          onInput={(e) => setNombre(e.currentTarget.value)}
+          maxlength={80}
+          class="w-full rounded-xl border border-white/10 bg-white/[0.06] px-3.5 py-2.5 text-sm text-white outline-none placeholder:text-white/30 focus:border-white/25"
+        />
+        <div class="flex justify-end gap-2">
+          <button
+            type="button"
+            class="rounded-full px-4 py-2 text-sm font-semibold text-white/70 hover:text-white"
+            onClick={p.onClose}
+          >
+            Cancelar
+          </button>
+          <button
+            type="submit"
+            class="rounded-full bg-white px-5 py-2 text-sm font-bold text-black transition-opacity disabled:opacity-30"
+            disabled={!nombre().trim()}
+          >
+            Guardar
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/**
+ * Confirmación de borrado.
+ *
+ * Propia y no `window.confirm`: el diálogo del sistema es feo, se sale del
+ * estilo de todo lo demás y su comportamiento dentro de un WebView no está
+ * garantizado. Aquí además cabe decir qué se pierde exactamente.
+ */
+function DeletePlaylistDialog(p: { lista: Playlist; onClose: () => void }) {
+  return (
+    <Modal title="Eliminar playlist" onClose={p.onClose}>
+      <div class="space-y-5 p-5">
+        <p class="text-sm leading-relaxed text-white/70">
+          Se borra <span class="font-bold text-white">{p.lista.name}</span> y sus{" "}
+          {p.lista.count} {p.lista.count === 1 ? "canción" : "canciones"}. Las
+          canciones en sí no se tocan: siguen en YouTube y en tu caché.
+        </p>
+        <div class="flex justify-end gap-2">
+          <button
+            class="rounded-full px-4 py-2 text-sm font-semibold text-white/70 hover:text-white"
+            onClick={p.onClose}
+          >
+            Cancelar
+          </button>
+          <button
+            class="rounded-full bg-red-500/90 px-5 py-2 text-sm font-bold text-white hover:bg-red-500"
+            onClick={() => {
+              deletePlaylist(p.lista.id);
+              p.onClose();
+            }}
+          >
+            Eliminar
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /** Contenido de una playlist local. */
 export function PlaylistView() {
   const datos = openPlaylist;
@@ -227,17 +432,7 @@ export function PlaylistView() {
                 <I.Play size={16} class="translate-x-[1px]" />
                 Reproducir
               </button>
-              <button
-                class="icon-btn size-9 rounded-full text-white/60 hover:bg-white/10 hover:text-white"
-                onClick={() => {
-                  if (confirm(`¿Borrar la playlist "${datos()!.lista.name}"?`)) {
-                    deletePlaylist(datos()!.lista.id);
-                  }
-                }}
-                title="Borrar playlist"
-              >
-                <I.Trash size={16} />
-              </button>
+              <PlaylistMenu lista={datos()!.lista} />
             </div>
           </div>
         </header>
