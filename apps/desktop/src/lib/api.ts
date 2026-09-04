@@ -95,6 +95,14 @@ export interface ShelfItem {
   subtitle: string;
   thumbnail: string | null;
   duration: string | null;
+  /**
+   * Canal del artista, si la fila lo enlazaba. Opcional en el tipo y no en el
+   * backend: hay sitios de la interfaz que construyen un `ShelfItem` a mano a
+   * partir de datos que nunca tuvieron esos enlaces.
+   */
+  artistId?: string | null;
+  /** Álbum al que pertenece, si la fila lo enlazaba. */
+  albumId?: string | null;
 }
 
 export interface Shelf {
@@ -199,6 +207,8 @@ const realApi = {
   browseMore: (continuation: string) =>
     invoke<BrowsePage>("browse_more", { continuation }),
   setUpNext: (tracks: Partial<Track>[]) => invoke<void>("set_up_next", { tracks }),
+  playNext: (track: Partial<Track>) => invoke<void>("play_next", { track }),
+  enqueue: (track: Partial<Track>) => invoke<void>("enqueue", { track }),
 
   playlist: (id: string) => invoke<PlaylistResult>("playlist", { id }),
 

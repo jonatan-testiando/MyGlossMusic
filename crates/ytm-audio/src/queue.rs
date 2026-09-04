@@ -54,6 +54,33 @@ impl Queue {
         self.items.len().saturating_sub(self.index + 1)
     }
 
+    /// Mete una pista justo despues de la que suena.
+    ///
+    /// A diferencia de [`Self::set_up_next`], que sustituye toda la cola de
+    /// detras, esta la conserva: es "reproducir a continuacion", no "cambiar de
+    /// cola". Si la pista ya estaba en la cola por detras, se mueve en vez de
+    /// duplicarse — tener la misma cancion dos veces seguidas nunca es lo que
+    /// se pretendia.
+    pub fn play_next(&mut self, item: TrackInfo) {
+        if let Some(pos) = self
+            .items
+            .iter()
+            .position(|t| t.video_id == item.video_id && t.video_id != self.current_id())
+        {
+            self.items.remove(pos);
+            // Quitar algo de delante corre el indice de la actual hacia atras.
+            if pos < self.index {
+                self.index -= 1;
+            }
+        }
+        let destino = (self.index + 1).min(self.items.len());
+        self.items.insert(destino, item);
+    }
+
+    fn current_id(&self) -> &str {
+        self.items.get(self.index).map_or("", |t| t.video_id.as_str())
+    }
+
     pub fn items(&self) -> &[TrackInfo] {
         &self.items
     }
@@ -319,5 +346,50 @@ mod tests {
         seen.sort();
         seen.dedup();
         assert_eq!(seen.len(), 20, "shuffle debe cubrir toda la cola");
+    }
+
+    /// Nombres de la cola, para que los fallos se lean de un vistazo.
+    fn ids(q: &Queue) -> Vec<&str> {
+        q.items().iter().map(|t| t.video_id.as_str()).collect()
+    }
+
+    #[test]
+    fn play_next_conserva_el_resto_de_la_cola() {
+        // La diferencia con `set_up_next`, que se lleva por delante todo lo que
+        // viene detras. Aqui solo se cuela una.
+        let mut q = Queue::default();
+        q.set_items(vec![track("a"), track("b"), track("c")], 0);
+        q.play_next(track("z"));
+
+        assert_eq!(ids(&q), ["a", "z", "b", "c"]);
+        assert_eq!(q.current().unwrap().video_id, "a", "la que suena no cambia");
+    }
+
+    #[test]
+    fn play_next_de_algo_que_ya_estaba_lo_mueve_en_vez_de_duplicarlo() {
+        let mut q = Queue::default();
+        q.set_items(vec![track("a"), track("b"), track("c")], 0);
+        q.play_next(track("c"));
+        assert_eq!(ids(&q), ["a", "c", "b"]);
+    }
+
+    #[test]
+    fn play_next_no_descoloca_la_actual_al_mover_algo_de_delante() {
+        // Sacar una pista anterior a la actual corre el indice: sin ajustarlo,
+        // "la que suena" pasaria a ser otra.
+        let mut q = Queue::default();
+        q.set_items(vec![track("a"), track("b"), track("c")], 2);
+        q.play_next(track("a"));
+
+        assert_eq!(ids(&q), ["b", "c", "a"]);
+        assert_eq!(q.current().unwrap().video_id, "c", "sigue sonando la misma");
+    }
+
+    #[test]
+    fn play_next_al_final_de_la_cola() {
+        let mut q = Queue::default();
+        q.set_items(vec![track("a")], 0);
+        q.play_next(track("z"));
+        assert_eq!(ids(&q), ["a", "z"]);
     }
 }

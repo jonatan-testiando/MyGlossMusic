@@ -859,6 +859,32 @@ export async function playWithRadio(track: SearchResult) {
   }
 }
 
+/**
+ * "Comenzar mix": la pista suena y detrás va su radio.
+ *
+ * Es [`playWithRadio`] desde el menú, donde lo que hay es un `Track` y no un
+ * resultado de búsqueda. Se avisa porque el mix tarda un segundo en llegar y
+ * hasta entonces la cola se ve con una sola canción, que parece un fallo.
+ */
+export async function comenzarMix(track: Partial<Track>) {
+  if (!track.videoId) return;
+  api.playQueue([track], 0);
+  setRelatedArtistId(null);
+  avisar("Preparando el mix…", "mix");
+  try {
+    const r = await api.radio(track.videoId);
+    setRelatedArtistId(r.artistBrowseId);
+    const resto = r.tracks.filter((t) => t.videoId !== track.videoId);
+    if (resto.length) {
+      api.setUpNext(resto.map(toTrack));
+      avisar(`Mix de ${resto.length} canciones`, "mix");
+    }
+  } catch (e) {
+    console.error("no se pudo cargar la radio", e);
+    avisarError(motivo(e, "No se pudo preparar el mix."));
+  }
+}
+
 /** Reproduce un resultado y encola su radio. */
 export function playFromResults(index: number) {
   const elegido = results()[index];

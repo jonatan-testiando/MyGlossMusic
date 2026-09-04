@@ -58,6 +58,12 @@ pub struct ShelfItem {
     pub subtitle: String,
     pub thumbnail: Option<String>,
     pub duration: Option<String>,
+    /// Canal del artista, si la fila lo enlaza. Para "Ir al artista".
+    #[serde(default)]
+    pub artist_id: Option<String>,
+    /// Album al que pertenece, si la fila lo enlaza.
+    #[serde(default)]
+    pub album_id: Option<String>,
 }
 
 /// Una fila del feed, con su titulo.
@@ -397,6 +403,8 @@ fn parse_card(r: &Value) -> Option<ShelfItem> {
         return None;
     }
     let (kind, id) = target(r.get("navigationEndpoint")?)?;
+    let (artist_id, album_id) = enlaces_de_columnas(r.get("subtitle"));
+
     Some(ShelfItem {
         kind,
         id,
@@ -404,6 +412,8 @@ fn parse_card(r: &Value) -> Option<ShelfItem> {
         subtitle: runs_text(r.get("subtitle")),
         thumbnail: extract_thumbnail(r),
         duration: None,
+        artist_id,
+        album_id,
     })
 }
 
@@ -427,6 +437,10 @@ pub(crate) fn parse_row(r: &Value) -> Option<ShelfItem> {
         }
     };
 
+    // Las columnas enlazan al artista y al album de la pista. Se distinguen
+    // por su `pageType`, no por el orden: no siempre estan los dos.
+    let (artist_id, album_id) = enlaces_de_columnas(r.get("flexColumns"));
+
     Some(ShelfItem {
         kind,
         id,
@@ -434,7 +448,32 @@ pub(crate) fn parse_row(r: &Value) -> Option<ShelfItem> {
         duration: crate::search::extract_duration(&subtitle),
         subtitle: crate::search::clean_subtitle(&subtitle),
         thumbnail: extract_thumbnail(r),
+        artist_id,
+        album_id,
     })
+}
+
+/// Canal del artista y album que enlazan las columnas de una fila.
+fn enlaces_de_columnas(columnas: Option<&Value>) -> (Option<String>, Option<String>) {
+    let Some(columnas) = columnas else {
+        return (None, None);
+    };
+    // `navigationEndpoint` y no `browseEndpoint`: `target` espera el envoltorio,
+    // que es donde distingue entre reproducir algo y abrir una pagina.
+    let mut endpoints = Vec::new();
+    collect_by_key(columnas, "navigationEndpoint", &mut endpoints);
+
+    let mut artista = None;
+    let mut album = None;
+    for e in endpoints {
+        let Some((kind, id)) = target(e) else { continue };
+        match kind {
+            ItemKind::Artist if artista.is_none() => artista = Some(id),
+            ItemKind::Album if album.is_none() => album = Some(id),
+            _ => {}
+        }
+    }
+    (artista, album)
 }
 
 /// Adonde lleva un endpoint: a reproducir algo, o a otra pagina.
@@ -607,6 +646,58 @@ mod tests {
         assert_eq!(page.title.as_deref(), Some("SABAI"));
         assert_eq!(page.subtitle.as_deref(), Some("1,25 M de oyentes mensuales"));
         assert_eq!(page.thumbnail.as_deref(), Some("https://ejemplo/artista.jpg"));
+    }
+
+    #[test]
+    fn una_fila_trae_el_enlace_a_su_artista() {
+        // Forma real, comprobada contra una busqueda: el canal del artista
+        // cuelga de una de las columnas de texto, no de la fila.
+        let artista = json!({ "browseEndpoint": {
+            "browseId": "UClYV6hHlupm_S_ObS1W-DYw",
+            "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": { "pageType": "MUSIC_PAGE_TYPE_ARTIST" }
+            }
+        }});
+        let album = json!({ "browseEndpoint": {
+            "browseId": "MPREb_despues",
+            "browseEndpointContextSupportedConfigs": {
+                "browseEndpointContextMusicConfig": { "pageType": "MUSIC_PAGE_TYPE_ALBUM" }
+            }
+        }});
+
+        let page = parse_page(&json!({ "musicShelfRenderer": {
+            "contents": [{ "musicResponsiveListItemRenderer": {
+                "playlistItemData": { "videoId": "abcdefghijk" },
+                "flexColumns": [
+                    { "musicResponsiveListItemFlexColumnRenderer":
+                        { "text": { "runs": [{ "text": "Blinding Lights" }] } } },
+                    { "musicResponsiveListItemFlexColumnRenderer": { "text": { "runs": [
+                        { "text": "The Weeknd", "navigationEndpoint": artista },
+                        { "text": " - " },
+                        { "text": "After Hours", "navigationEndpoint": album }
+                    ]}}}
+                ]
+            }}]
+        }}));
+
+        let item = &page.shelves[0].items[0];
+        assert_eq!(item.kind, ItemKind::Track, "sigue siendo una pista");
+        assert_eq!(item.id, "abcdefghijk");
+        assert_eq!(item.artist_id.as_deref(), Some("UClYV6hHlupm_S_ObS1W-DYw"));
+        assert_eq!(item.album_id.as_deref(), Some("MPREb_despues"));
+    }
+
+    #[test]
+    fn una_fila_sin_enlaces_no_se_inventa_ninguno() {
+        let page = parse_page(&json!({ "musicShelfRenderer": {
+            "contents": [{ "musicResponsiveListItemRenderer": {
+                "playlistItemData": { "videoId": "abcdefghijk" },
+                "flexColumns": [{ "musicResponsiveListItemFlexColumnRenderer":
+                    { "text": { "runs": [{ "text": "Suelta" }] } } }]
+            }}]
+        }}));
+        let item = &page.shelves[0].items[0];
+        assert!(item.artist_id.is_none() && item.album_id.is_none());
     }
 
     #[test]

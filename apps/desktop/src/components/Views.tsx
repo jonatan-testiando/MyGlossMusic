@@ -835,6 +835,8 @@ export function SearchView() {
 
                     <Show when={r.kind === "track"}>
                       <TrackMenu
+                        artistId={r.artistId}
+                        albumId={r.albumId}
                         track={{
                           videoId: r.id,
                           title: r.title,
@@ -1070,6 +1072,8 @@ function TrackList(p: { title: string; items: ShelfItem[]; onPick: (i: ShelfItem
               </button>
               <span class="shrink-0 text-xs tabular-nums text-white/45">{t.duration ?? ""}</span>
               <TrackMenu
+                artistId={t.artistId}
+                albumId={t.albumId}
                 track={{
                   videoId: t.id,
                   title: t.title,

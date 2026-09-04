@@ -301,6 +301,9 @@ export const mockApi = {
           subtitle: t.author,
           thumbnail: COVER,
           duration: t.d,
+          // Como en las respuestas de verdad: las filas enlazan a su artista.
+          artistId: "UCartista123",
+          albumId: "MPREb_0",
         })),
       },
       {
@@ -358,6 +361,8 @@ export const mockApi = {
     })),
   }),
   setUpNext: async () => {},
+  playNext: async () => {},
+  enqueue: async () => {},
 
   searchSuggestions: async (q: string) => {
     const base = TRACKS.map((t) => t.title.toLowerCase());

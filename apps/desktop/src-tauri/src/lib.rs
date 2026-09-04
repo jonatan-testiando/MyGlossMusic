@@ -173,6 +173,18 @@ async fn browse_more(
         .map_err(|e| e.to_string())
 }
 
+/// Cuela una pista justo despues de la que suena.
+#[tauri::command]
+fn play_next(state: tauri::State<'_, App>, track: TrackInput) {
+    state.engine.send(Command::PlayNext(track.into()));
+}
+
+/// Anade una pista al final de la cola.
+#[tauri::command]
+fn enqueue(state: tauri::State<'_, App>, track: TrackInput) {
+    state.engine.send(Command::Enqueue(track.into()));
+}
+
 #[tauri::command]
 fn play_queue(state: tauri::State<'_, App>, tracks: Vec<TrackInput>, start: usize) {
     tracing::info!(count = tracks.len(), start, "Comando play_queue recibido");
@@ -978,6 +990,8 @@ pub fn run() {
             search_suggestions,
             radio,
             set_up_next,
+            play_next,
+            enqueue,
             playlist,
             home,
             browse,

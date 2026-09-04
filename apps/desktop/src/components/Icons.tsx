@@ -235,6 +235,31 @@ export const Pencil = svg(() =>
   false,
 );
 
+export const Radio = svg(() => 
+  <>
+    <circle cx="12" cy="12" r="2.5" />
+    <path d="M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4" />
+    <path d="M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2" />
+  </>,
+  false,
+);
+
+export const QueueAdd = svg(() => 
+  <>
+    <path d="M3 6h12M3 12h12M3 18h8" />
+    <path d="M18 14v7M14.5 17.5h7" />
+  </>,
+  false,
+);
+
+export const Share = svg(() => 
+  <>
+    <path d="M13 5.5 19.5 12 13 18.5" />
+    <path d="M19 12H9a5 5 0 0 0-5 5v1" />
+  </>,
+  false,
+);
+
 export const Trash = svg(() => 
   <>
     <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
