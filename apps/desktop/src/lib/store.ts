@@ -4,6 +4,7 @@ import { avisar, avisarError, motivo, vigilarConexion } from "./toast";
 import { instalarAtajos } from "./atajos";
 import { createStore, reconcile } from "solid-js/store";
 import {
+  EXPLORE,
   api,
   parseDuration,
   thumbAt,
@@ -91,6 +92,14 @@ export const [browsePage, setBrowsePage] = createSignal<BrowsePage | null>(null)
 export const [browseLoading, setBrowseLoading] = createSignal(false);
 /** Id de la página abierta, para poder guardarla o volver a pedirla. */
 export const [browseId, setBrowseId] = createSignal<string | null>(null);
+/**
+ * Nombre con el que se llegó a la página.
+ *
+ * Explorar y las categorías de género no traen cabecera propia, así que sin
+ * esto se abrían con un "Sin título" enorme arriba. El de la respuesta manda
+ * cuando existe; este es el respaldo.
+ */
+export const [browseTitulo, setBrowseTitulo] = createSignal<string | null>(null);
 export const [savingBrowse, setSavingBrowse] = createSignal(false);
 /** Sigue habiendo tandas en camino de la lista abierta. */
 export const [browseCompleting, setBrowseCompleting] = createSignal(false);
@@ -259,7 +268,7 @@ export async function removeTrackFromPlaylist(id: number, videoId: string) {
  * la cabecera hacían antes un apaño — atrás llevaba al inicio, pasara lo que
  * pasara.
  */
-type Destino = { view: View; browseId?: string; titulo?: string };
+type Destino = { view: View; browseId?: string; params?: string; titulo?: string };
 
 const [historial, setHistorial] = createSignal<Destino[]>([{ view: "home" }]);
 const [posicion, setPosicion] = createSignal(0);
@@ -313,12 +322,20 @@ export function adelante() {
 function aplicar(d: Destino) {
   togglePlayerView(false);
   setView(d.view);
-  if (d.view === "browse" && d.browseId) cargarBrowse(d.browseId);
+  if (d.view === "browse" && d.browseId) {
+    setBrowseTitulo(d.titulo ?? null);
+    cargarBrowse(d.browseId, d.params);
+  }
 }
 
 /** Abre una página de artista, álbum o playlist. */
-export function openBrowse(browseId: string, titulo?: string) {
-  navegar({ view: "browse", browseId, titulo });
+export function openBrowse(browseId: string, titulo?: string, params?: string) {
+  navegar({ view: "browse", browseId, params, titulo });
+}
+
+/** Explorar: novedades, rankings y las categorías de género. */
+export function openExplore() {
+  openBrowse(EXPLORE, "Explorar");
 }
 
 /**
@@ -342,7 +359,7 @@ let generacionBrowse = 0;
 /** Encadenado en curso, para que "Guardar" no copie media lista. */
 let tandasEnCurso: Promise<void> | null = null;
 
-async function cargarBrowse(id: string) {
+async function cargarBrowse(id: string, params?: string) {
   const gen = ++generacionBrowse;
   setBrowseId(id);
   setBrowseLoading(true);
@@ -350,7 +367,7 @@ async function cargarBrowse(id: string) {
   // nuevo mientras carga, que parece un fallo.
   setBrowsePage(null);
   try {
-    const primera = await api.browse(id);
+    const primera = await api.browse(id, params);
     if (gen !== generacionBrowse) return;
     setBrowsePage(primera);
     setBrowseLoading(false);

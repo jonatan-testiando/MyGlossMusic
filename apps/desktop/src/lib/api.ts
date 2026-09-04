@@ -102,6 +102,21 @@ export interface Shelf {
   items: ShelfItem[];
 }
 
+/**
+ * Portada de Explorar. Es un `browseId` como cualquier otro, así que la vista
+ * de `browse` lo pinta sin saber que es especial.
+ */
+export const EXPLORE = "FEmusic_explore";
+
+/** Una pastilla de Explorar: texto, destino y su franja de color. */
+export interface NavButton {
+  label: string;
+  browseId: string;
+  params: string | null;
+  /** `#rrggbb`, o null en los tres botones de arriba. */
+  stripe: string | null;
+}
+
 export interface BrowsePage {
   title: string | null;
   subtitle: string | null;
@@ -110,6 +125,7 @@ export interface BrowsePage {
   description: string | null;
   thumbnail: string | null;
   shelves: Shelf[];
+  buttons: NavButton[];
   /** Token de la siguiente tanda. YouTube corta las listas de 100 en 100. */
   continuation: string | null;
 }

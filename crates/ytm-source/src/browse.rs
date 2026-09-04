@@ -68,6 +68,22 @@ pub struct Shelf {
     pub items: Vec<ShelfItem>,
 }
 
+/// Un boton de navegacion: las pastillas de colores de Explorar.
+///
+/// Son su propio renderer y no tarjetas: llevan texto, un destino y una franja
+/// de color, y nada mas. Los tres de arriba —Novedades, Rankings, Estados de
+/// animo— son los mismos pero sin franja.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NavButton {
+    pub label: String,
+    pub browse_id: String,
+    /// Opaco, lo define YouTube. Distingue una categoria de otra.
+    pub params: Option<String>,
+    /// `#rrggbb` de la franja izquierda, si la tiene.
+    pub stripe: Option<String>,
+}
+
 /// Una pagina de `browse` ya normalizada.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -83,6 +99,9 @@ pub struct BrowsePage {
     /// Imagen de cabecera.
     pub thumbnail: Option<String>,
     pub shelves: Vec<Shelf>,
+    /// Botones de navegacion. Solo Explorar y las categorias los traen.
+    #[serde(default)]
+    pub buttons: Vec<NavButton>,
     /// Token de la siguiente tanda de pistas, si la lista no cabe en una.
     ///
     /// YouTube corta las playlists en paginas de 100. Una de 551 pistas llega
@@ -195,6 +214,7 @@ pub fn parse_page(root: &Value) -> BrowsePage {
                 (!shelf.items.is_empty()).then_some(shelf)
             })
             .collect(),
+        buttons: parse_buttons(root),
         continuation,
         ..Default::default()
     };
@@ -239,6 +259,34 @@ pub fn parse_continued(root: &Value) -> BrowsePage {
         continuation: parse_continuation(root),
         ..Default::default()
     }
+}
+
+/// Los botones de navegacion, en el orden en que llegan.
+fn parse_buttons(root: &Value) -> Vec<NavButton> {
+    let mut crudos = Vec::new();
+    collect_by_key(root, "musicNavigationButtonRenderer", &mut crudos);
+
+    crudos
+        .into_iter()
+        .filter_map(|b| {
+            let label = runs_text(b.get("buttonText"));
+            if label.is_empty() {
+                return None;
+            }
+            let destino = b.get("clickCommand")?.get("browseEndpoint")?;
+            Some(NavButton {
+                label,
+                browse_id: destino.get("browseId").and_then(Value::as_str)?.to_string(),
+                params: destino.get("params").and_then(Value::as_str).map(str::to_string),
+                stripe: b
+                    .get("solid")
+                    .and_then(|s| s.get("leftStripeColor"))
+                    .and_then(Value::as_u64)
+                    // Llega como un entero ARGB. El alfa sobra: siempre es opaco.
+                    .map(|c| format!("#{:06x}", c & 0x00FF_FFFF)),
+            })
+        })
+        .collect()
 }
 
 /// La cabecera de artista o album. El feed de inicio no trae ninguna.
@@ -559,6 +607,46 @@ mod tests {
         assert_eq!(page.title.as_deref(), Some("SABAI"));
         assert_eq!(page.subtitle.as_deref(), Some("1,25 M de oyentes mensuales"));
         assert_eq!(page.thumbnail.as_deref(), Some("https://ejemplo/artista.jpg"));
+    }
+
+    #[test]
+    fn lee_las_pastillas_de_explorar() {
+        // Forma real, comprobada contra FEmusic_explore: las de arriba llevan
+        // icono y las de generos, una franja de color en un entero ARGB.
+        let page = parse_page(&json!({ "contents": [
+            { "musicNavigationButtonRenderer": {
+                "buttonText": { "runs": [{ "text": "Novedades" }] },
+                "clickCommand": { "browseEndpoint": { "browseId": "FEmusic_new_releases" } },
+                "iconStyle": { "icon": { "iconType": "MUSIC_NEW_RELEASE" } }
+            }},
+            { "musicNavigationButtonRenderer": {
+                "buttonText": { "runs": [{ "text": "Dormir" }] },
+                "solid": { "leftStripeColor": 4286267099u32 },
+                "clickCommand": { "browseEndpoint": {
+                    "browseId": "FEmusic_moods_and_genres_category",
+                    "params": "ggMPOg1uX1MxaFQ3Z0JMZkN4"
+                }}
+            }}
+        ]}));
+
+        assert_eq!(page.buttons.len(), 2);
+        assert_eq!(page.buttons[0].label, "Novedades");
+        assert_eq!(page.buttons[0].browse_id, "FEmusic_new_releases");
+        assert!(page.buttons[0].stripe.is_none(), "las de arriba no llevan franja");
+
+        let dormir = &page.buttons[1];
+        assert_eq!(dormir.params.as_deref(), Some("ggMPOg1uX1MxaFQ3Z0JMZkN4"));
+        // El alfa del entero ARGB se descarta: solo interesa el color.
+        assert_eq!(dormir.stripe.as_deref(), Some("#7b3edb")); // 0xFF7B3EDB
+    }
+
+    #[test]
+    fn un_boton_sin_destino_no_se_pinta() {
+        // Una pastilla que no lleva a ningun sitio es decoracion.
+        let page = parse_page(&json!({ "musicNavigationButtonRenderer": {
+            "buttonText": { "runs": [{ "text": "Suelto" }] }
+        }}));
+        assert!(page.buttons.is_empty());
     }
 
     #[test]

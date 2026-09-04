@@ -3,6 +3,7 @@ import { PlaylistMenu } from "./Playlists";
 import { BUSCADOR } from "../lib/atajos";
 import {
   api,
+  EXPLORE,
   thumbAt,
   type BrowsePage,
   type ClientHealth,
@@ -31,7 +32,10 @@ import {
   browsePage,
   browseCompleting,
   browseLoading,
+  browseId,
+  browseTitulo,
   openBrowse,
+  openExplore,
   saveBrowseAsPlaylist,
   savingBrowse,
   atras,
@@ -300,13 +304,15 @@ export function Sidebar() {
   const collapsed = () => !sidebarOpen();
 
   const go = (id: (typeof items)[number]["id"]) => {
-    navegar({ view: id === "explore" ? "search" : id });
+    if (id === "explore") openExplore();
+    else navegar({ view: id });
   };
 
   // Mientras se mira la canción no hay ninguna pestaña activa: se está en el
   // reproductor, no navegando.
   const isActive = (id: (typeof items)[number]["id"]) =>
-    !playerViewOpen() && view() === (id === "explore" ? "search" : id);
+    !playerViewOpen() &&
+    (id === "explore" ? view() === "browse" && browseId() === EXPLORE : view() === id);
 
   return (
     <nav
@@ -506,6 +512,7 @@ const VACIO: BrowsePage = {
   description: null,
   thumbnail: null,
   shelves: [],
+  buttons: [],
   continuation: null,
 };
 
@@ -921,7 +928,7 @@ export function BrowseView() {
           </Show>
           <div class="min-w-0 flex-1">
             <h1 class="truncate text-4xl font-extrabold tracking-tight text-white">
-              {pagina()!.title ?? "Sin título"}
+              {pagina()!.title ?? browseTitulo() ?? "Sin título"}
             </h1>
             <Show when={pagina()!.subtitle}>
               <p class="mt-1.5 truncate text-sm font-medium text-white/70">
@@ -968,6 +975,34 @@ export function BrowseView() {
             </Show>
           </div>
         </header>
+
+        {/* Las pastillas de Explorar y de las categorías. Van antes que las
+            estanterías porque son navegación, no contenido. */}
+        <Show when={pagina()!.buttons.length > 0}>
+          <div class="px-8 pb-2">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+              <For each={pagina()!.buttons}>
+                {(b) => (
+                  <button
+                    class="group relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.07] py-3 pl-4 pr-3 text-left text-[13px] font-semibold text-white transition-colors hover:bg-white/[0.14]"
+                    onClick={() => openBrowse(b.browseId, b.label, b.params ?? undefined)}
+                  >
+                    {/* La franja de color la manda YouTube con cada categoría.
+                        Sin ella —los tres botones de arriba— la pastilla se
+                        queda lisa, que es como se ven allí. */}
+                    <Show when={b.stripe}>
+                      <span
+                        class="absolute inset-y-0 left-0 w-[3px]"
+                        style={{ background: b.stripe! }}
+                      />
+                    </Show>
+                    <span class="line-clamp-1">{b.label}</span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
 
         {/* Las pistas van en lista vertical y lo demás en carrusel, que es como
             lo presenta la referencia: las canciones de un artista se leen en

@@ -280,6 +280,17 @@ export const mockApi = {
     thumbnail: COVER,
     // Solo las listas se parten en tandas, igual que en YouTube.
     continuation: browseId.startsWith("VL") ? "tanda-2" : null,
+    // Las pastillas solo las trae Explorar y las categorías.
+    buttons: browseId.startsWith("FEmusic")
+      ? [
+          { label: "Novedades", browseId: "FEmusic_new_releases", params: null, stripe: null },
+          { label: "Rankings", browseId: "FEmusic_charts", params: null, stripe: null },
+          { label: "Dormir", browseId: "FEmusic_moods_and_genres_category", params: "p1", stripe: "#7b3edb" },
+          { label: "Fiesta", browseId: "FEmusic_moods_and_genres_category", params: "p2", stripe: "#e8734a" },
+          { label: "Concentración", browseId: "FEmusic_moods_and_genres_category", params: "p3", stripe: "#4a9de8" },
+          { label: "Gaming", browseId: "FEmusic_moods_and_genres_category", params: "p4", stripe: "#8a8a8a" },
+        ]
+      : [],
     shelves: [
       {
         title: "Canciones populares",
@@ -315,6 +326,7 @@ export const mockApi = {
       secondSubtitle: null,
       description: null,
       thumbnail: null,
+      buttons: [],
       continuation: n < 3 ? `tanda-${n + 1}` : null,
       shelves: [
         {
