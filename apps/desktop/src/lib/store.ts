@@ -1,4 +1,5 @@
 import { createSignal, createEffect, on } from "solid-js";
+import { cambiarConPortada } from "./transicion";
 import { createStore, reconcile } from "solid-js/store";
 import {
   api,
@@ -273,7 +274,7 @@ export function adelante() {
 }
 
 function aplicar(d: Destino) {
-  setPlayerViewOpen(false);
+  togglePlayerView(false);
   setView(d.view);
   if (d.view === "browse" && d.browseId) cargarBrowse(d.browseId);
 }
@@ -471,6 +472,24 @@ export const trackVisible = (): Track | null => playback.track ?? pendiente();
 export function reanudarPendiente() {
   const t = pendiente();
   if (t) api.playQueue([t], 0);
+}
+
+/**
+ * Abre o cierra la vista de reproducción.
+ *
+ * Pasa por aquí todo el mundo, incluida la navegación: cambiar a Inicio con una
+ * canción sonando también minimiza, y esa era justo la transición que se veía
+ * de golpe.
+ *
+ * `animar` en falso para los sitios que ADEMÁS empiezan a reproducir otra cosa:
+ * ahí la portada de origen es la de la canción anterior, y verla volar para
+ * cambiar a mitad de vuelo es peor que no animar nada.
+ */
+export function togglePlayerView(abrir: boolean, animar = true) {
+  if (abrir === playerViewOpen()) return;
+  const cambiar = () => setPlayerViewOpen(abrir);
+  if (animar) cambiarConPortada(abrir, cambiar);
+  else cambiar();
 }
 
 export const [isFavorite, setIsFavorite] = createSignal(false);
@@ -678,7 +697,7 @@ export async function runSearch(q: string) {
   if (c.kind === "video") {
     api.playNow(c.value);
     setView("home");
-    setPlayerViewOpen(true);
+    togglePlayerView(true, false);
     api
       .radio(c.value)
       .then((r) => {

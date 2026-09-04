@@ -583,3 +583,41 @@ body {
     transform: scale(12);
   }
 }
+
+/*
+ * Entrada de una vista.
+ *
+ * Acompaña al vuelo de la portada: mientras la carátula viaja, lo que llega
+ * detrás aparece en vez de estar ya puesto. El retraso es deliberado — arranca
+ * cuando la portada ya está a medio camino, y así se lee como una sola cosa y
+ * no como dos animaciones a la vez.
+ */
+@keyframes vista-entra {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.vista-entra {
+  animation: vista-entra 300ms cubic-bezier(0.32, 0.72, 0, 1) 90ms both;
+}
+
+/* El panel de la derecha entra desde su lado, no desde abajo. */
+@keyframes panel-entra {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+}
+
+.panel-entra {
+  animation: panel-entra 380ms cubic-bezier(0.32, 0.72, 0, 1) 120ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vista-entra,
+  .panel-entra {
+    animation: none;
+  }
+}

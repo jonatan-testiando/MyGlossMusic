@@ -6,7 +6,7 @@ import {
   isFavorite,
   toggleFavorite,
   playerViewOpen,
-  setPlayerViewOpen,
+  togglePlayerView,
   pendiente,
   reanudarPendiente,
   trackVisible,
@@ -126,19 +126,19 @@ export function PlayerBar() {
       <div class="flex items-center gap-3.5 max-w-[500px]">
         <Show
           when={trackVisible()?.thumbnail}
-          fallback={<div class="size-11 shrink-0 rounded-lg bg-white/10 cursor-pointer" onClick={() => setPlayerViewOpen(!playerViewOpen())} />}
+          fallback={<div class="size-11 shrink-0 rounded-lg bg-white/10 cursor-pointer" onClick={() => togglePlayerView(!playerViewOpen())} />}
         >
           <img
             src={thumbAt(trackVisible()!.thumbnail, 96)!}
             alt=""
             class="size-11 shrink-0 rounded-lg object-cover ring-1 ring-white/15 shadow-sm cursor-pointer hover:opacity-85 transition-opacity"
-            onClick={() => setPlayerViewOpen(!playerViewOpen())}
+            onClick={() => togglePlayerView(!playerViewOpen())}
           />
         </Show>
         <div class="min-w-0 max-w-[280px]">
           <div
             class="truncate text-[13.5px] font-bold text-white leading-snug cursor-pointer hover:underline"
-            onClick={() => setPlayerViewOpen(!playerViewOpen())}
+            onClick={() => togglePlayerView(!playerViewOpen())}
           >
             {trackVisible()?.title ?? "Nada reproduciéndose"}
           </div>
@@ -232,7 +232,7 @@ export function PlayerBar() {
         {/* Chevron para alternar vista del reproductor (Image 2 vs 3) */}
         <button
           class="icon-btn size-8 ml-1 text-white/70 hover:text-white"
-          onClick={() => setPlayerViewOpen(!playerViewOpen())}
+          onClick={() => togglePlayerView(!playerViewOpen())}
           title={playerViewOpen() ? "Cerrar reproductor" : "Abrir reproductor"}
         >
           <I.ChevronUp

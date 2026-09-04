@@ -45,7 +45,7 @@ import {
   loadingMore,
   playSaved,
   playerViewOpen,
-  setPlayerViewOpen,
+  togglePlayerView,
   sidebarOpen,
   toggleSidebar,
   palette,
@@ -179,7 +179,7 @@ function SearchBox() {
     setAbierto(false);
     setQuery(texto);
     runSearch(texto);
-    setPlayerViewOpen(false);
+    togglePlayerView(false, false);
     input.blur();
   };
 
@@ -592,7 +592,7 @@ export function HomeFeed() {
         duration: item.duration,
         thumbnail: item.thumbnail,
       });
-      setPlayerViewOpen(true);
+      togglePlayerView(true, false);
     } else {
       openBrowse(item.id, item.title);
     }
@@ -882,7 +882,7 @@ export function BrowseView() {
       duration: elegida.duration,
       thumbnail: elegida.thumbnail,
     });
-    setPlayerViewOpen(true);
+    togglePlayerView(true, false);
   };
 
   const aleatorio = () => {

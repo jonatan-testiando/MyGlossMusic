@@ -30,7 +30,7 @@ import {
   addingTo,
   settingsOpen,
   playerViewOpen,
-  setPlayerViewOpen,
+  togglePlayerView,
 } from "./lib/store";
 import * as I from "./components/Icons";
 import "./styles.css";
@@ -101,7 +101,7 @@ export default function App() {
             el panel es más ancho que la carátula, no al revés.
           */}
           <Show when={playerViewOpen() && playback.track}>
-            <div class="flex flex-1 min-w-0 items-center justify-center gap-12 px-8 py-16">
+            <div class="vista-entra flex flex-1 min-w-0 items-center justify-center gap-12 px-8 py-16">
               {/*
                 No hay marco: el marco ES la imagen. Con `max-w`/`max-h` y sin
                 ancho fijo, la portada se pinta con SU proporción — cuadrada la
@@ -111,6 +111,7 @@ export default function App() {
               */}
               <div class="flex h-full w-[min(44vw,780px)] shrink-0 items-center justify-center">
                 <img
+                  data-portada="grande"
                   src={coverUrl()!}
                   alt=""
                   onError={(e) => {
@@ -129,6 +130,10 @@ export default function App() {
 
           {/* 2. Vista de Exploración / Navegación (Image 3) */}
           <Show when={!playerViewOpen() || !playback.track}>
+            {/* El envoltorio existe para la entrada: sin un elemento propio no
+                hay nada a lo que colgarle la animación, porque debajo hay un
+                `Show` por vista y ninguno es padre de los demás. */}
+            <div class="vista-entra flex min-w-0 flex-1">
             <Show when={view() === "home"}>
               <HomeFeed />
             </Show>
@@ -157,16 +162,18 @@ export default function App() {
                 <Diagnostics />
               </div>
             </Show>
+            </div>
           </Show>
 
           {/* Miniplayer flotante en la esquina inferior derecha (Image 3) */}
           <Show when={!playerViewOpen() && playback.track}>
             <div
               class="absolute bottom-6 right-8 z-30 w-64 aspect-video rounded-2xl overflow-hidden ring-1 ring-white/20 shadow-[0_20px_45px_rgba(0,0,0,0.8)] cursor-pointer group bg-black/60 backdrop-blur-md transition-all duration-300 hover:scale-[1.03] hover:ring-white/40"
-              onClick={() => setPlayerViewOpen(true)}
+              onClick={() => togglePlayerView(true)}
               title="Volver a la canción"
             >
               <img
+                data-portada="mini"
                 src={coverUrl()!}
                 alt=""
                 class="size-full object-cover"
