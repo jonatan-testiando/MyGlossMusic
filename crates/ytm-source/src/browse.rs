@@ -108,6 +108,9 @@ pub struct BrowsePage {
     /// Botones de navegacion. Solo Explorar y las categorias los traen.
     #[serde(default)]
     pub buttons: Vec<NavButton>,
+    /// Filtros de estado de animo del inicio ("Energia", "Dormir"...).
+    #[serde(default)]
+    pub chips: Vec<crate::search::SearchChip>,
     /// Token de la siguiente tanda de pistas, si la lista no cabe en una.
     ///
     /// YouTube corta las playlists en paginas de 100. Una de 551 pistas llega
@@ -116,19 +119,26 @@ pub struct BrowsePage {
 }
 
 impl InnerTube {
+    /// Contexto de `browse`, con el identificador de sesion si ya lo tenemos.
+    fn contexto_browse(&self) -> Value {
+        let mut client = json!({
+            "clientName": WEB_REMIX.client_name,
+            "clientVersion": WEB_REMIX.client_version,
+            "hl": "es",
+            "gl": "US",
+        });
+        if let Some(v) = self.visitor() {
+            client["visitorData"] = json!(v);
+        }
+        json!({ "client": client })
+    }
+
     /// Pide una pagina a `browse`. Anonimo: no lleva cookies.
     ///
     /// `params` es opaco y lo define YouTube (lo usan las pestanias de artista).
     pub async fn browse(&self, browse_id: &str, params: Option<&str>) -> Result<BrowsePage> {
         let mut body = json!({
-            "context": {
-                "client": {
-                    "clientName": WEB_REMIX.client_name,
-                    "clientVersion": WEB_REMIX.client_version,
-                    "hl": "es",
-                    "gl": "US",
-                }
-            },
+            "context": self.contexto_browse(),
             "browseId": browse_id,
         });
         if let Some(p) = params {
@@ -155,6 +165,8 @@ impl InnerTube {
             .json()
             .await
             .with_context(|| format!("respuesta ilegible de browse {browse_id}"))?;
+        // Antes de nada: las continuaciones de esta pagina lo necesitaran.
+        self.remember_visitor(&json);
         Ok(parse_page(&json))
     }
 
@@ -165,18 +177,9 @@ impl InnerTube {
     /// otra vez sin dar error, que es peor que fallar.
     pub async fn browse_more(&self, continuation: &str) -> Result<BrowsePage> {
         let url = format!("{BROWSE_URL}?ctoken={c}&continuation={c}&type=next", c = continuation);
-        let body = json!({
-            "context": {
-                "client": {
-                    "clientName": WEB_REMIX.client_name,
-                    "clientVersion": WEB_REMIX.client_version,
-                    "hl": "es",
-                    "gl": "US",
-                }
-            }
-        });
+        let body = json!({ "context": self.contexto_browse() });
 
-        let res = self
+        let mut peticion = self
             .http_ref()
             .post(&url)
             .header("User-Agent", WEB_REMIX.user_agent)
@@ -184,7 +187,14 @@ impl InnerTube {
             .header("X-YouTube-Client-Version", WEB_REMIX.client_version)
             .header("Content-Type", "application/json")
             .header("Origin", "https://music.youtube.com")
-            .header("Referer", "https://music.youtube.com/")
+            .header("Referer", "https://music.youtube.com/");
+        // La sesion viaja tambien en la cabecera. Con una sola de las dos, el
+        // inicio devuelve una cascara vacia en vez de la siguiente tanda.
+        if let Some(v) = self.visitor() {
+            peticion = peticion.header("X-Goog-Visitor-Id", v);
+        }
+
+        let res = peticion
             .json(&body)
             .send()
             .await
@@ -206,10 +216,15 @@ impl InnerTube {
 pub fn parse_page(root: &Value) -> BrowsePage {
     let crudas = collect_shelves(root);
 
-    // El token se busca DENTRO de las estanterias, no en toda la respuesta: en
-    // el inicio hay continuaciones de la lista de secciones (mas filas) que no
-    // tienen nada que ver con seguir leyendo pistas de una lista.
-    let continuation = crudas.iter().find_map(|s| parse_continuation(s));
+    // Primero dentro de las estanterias: ahi esta el token de una lista larga,
+    // el que sigue leyendo pistas. Si ninguna lo trae, se mira la pagina
+    // entera, que es donde el inicio cuelga el suyo — el que trae MAS
+    // ESTANTERIAS. Son cosas distintas y por eso se buscan en este orden: una
+    // lista de 551 pistas tiene los dos, y el que importa es el de las pistas.
+    let continuation = crudas
+        .iter()
+        .find_map(|s| parse_continuation(s))
+        .or_else(|| parse_continuation(root));
 
     let mut page = BrowsePage {
         shelves: crudas
@@ -221,6 +236,7 @@ pub fn parse_page(root: &Value) -> BrowsePage {
             })
             .collect(),
         buttons: parse_buttons(root),
+        chips: parse_chips_browse(root),
         continuation,
         ..Default::default()
     };
@@ -249,6 +265,28 @@ pub fn parse_page(root: &Value) -> BrowsePage {
 /// YouTube — esta y la antigua `musicPlaylistShelfContinuation` — sin tener que
 /// distinguirlas.
 pub fn parse_continued(root: &Value) -> BrowsePage {
+    // Las dos formas que usa YouTube, y hay que distinguirlas:
+    //
+    //   - El inicio manda ESTANTERIAS enteras, con su titulo. Van detras de las
+    //     que ya habia, cada una la suya.
+    //   - Una lista larga manda FILAS sueltas, sin envoltorio. Van al final de
+    //     la lista que ya se estaba leyendo.
+    //
+    // Aplanarlo todo, como se hacia, juntaba "Sube el volumen", "Playlists de
+    // Urbano Latino" y "Exitos de hoy" en una sola estanteria sin nombre.
+    let estanterias = collect_shelves(root);
+    if !estanterias.is_empty() {
+        return BrowsePage {
+            shelves: estanterias
+                .into_iter()
+                .map(parse_shelf)
+                .filter(|s| !s.items.is_empty())
+                .collect(),
+            continuation: parse_continuation(root),
+            ..Default::default()
+        };
+    }
+
     let mut rows = Vec::new();
     collect_by_key(root, "musicResponsiveListItemRenderer", &mut rows);
     let mut cards = Vec::new();
@@ -265,6 +303,34 @@ pub fn parse_continued(root: &Value) -> BrowsePage {
         continuation: parse_continuation(root),
         ..Default::default()
     }
+}
+
+/// Los filtros de arriba del inicio.
+///
+/// Son el mismo renderer que los del buscador pero con OTRO destino: alli el
+/// `params` cuelga de un `searchEndpoint` y aqui de un `browseEndpoint` que
+/// vuelve a `FEmusic_home`. Por eso no sirve el parser de `search.rs`: mira el
+/// sitio equivocado y devolvia una lista vacia.
+fn parse_chips_browse(root: &Value) -> Vec<crate::search::SearchChip> {
+    let mut nodos = Vec::new();
+    collect_by_key(root, "chipCloudChipRenderer", &mut nodos);
+
+    let mut out = Vec::new();
+    let mut vistos = std::collections::HashSet::new();
+    for c in nodos {
+        let label = runs_text(c.get("text"));
+        let params = c
+            .get("navigationEndpoint")
+            .and_then(|e| e.get("browseEndpoint"))
+            .and_then(|e| e.get("params"))
+            .and_then(Value::as_str);
+        if let (false, Some(params)) = (label.is_empty(), params) {
+            if vistos.insert(params.to_string()) {
+                out.push(crate::search::SearchChip { label, params: params.to_string() });
+            }
+        }
+    }
+    out
 }
 
 /// Los botones de navegacion, en el orden en que llegan.
@@ -701,6 +767,23 @@ mod tests {
     }
 
     #[test]
+    fn los_filtros_del_inicio_no_son_los_del_buscador() {
+        // Mismo renderer, otro destino: en el inicio el `params` cuelga de un
+        // `browseEndpoint` y en el buscador de un `searchEndpoint`. Usar el
+        // parser del buscador aqui devolvia una lista vacia.
+        let page = parse_page(&json!({ "chipCloudChipRenderer": {
+            "text": { "runs": [{ "text": "Energia" }] },
+            "navigationEndpoint": { "browseEndpoint": {
+                "browseId": "FEmusic_home",
+                "params": "ggM8SgQICRAD"
+            }}
+        }}));
+        assert_eq!(page.chips.len(), 1);
+        assert_eq!(page.chips[0].label, "Energia");
+        assert_eq!(page.chips[0].params, "ggM8SgQICRAD");
+    }
+
+    #[test]
     fn lee_las_pastillas_de_explorar() {
         // Forma real, comprobada contra FEmusic_explore: las de arriba llevan
         // icono y las de generos, una franja de color en un entero ARGB.
@@ -795,14 +878,47 @@ mod tests {
     }
 
     #[test]
-    fn el_inicio_no_se_inventa_una_continuacion() {
-        // La lista de secciones del inicio tambien trae token, pero es para
-        // mas filas, no para seguir leyendo pistas. Se ignora a proposito.
+    fn el_inicio_usa_el_token_de_la_pagina_para_pedir_mas_estanterias() {
         let page = parse_page(&json!({
             "contents": [carrusel_con("Con algo", json!([tarjeta("A", "aaaaaaaaaaa")]))],
             "continuations": [{ "nextContinuationData": { "continuation": "MAS_FILAS" } }]
         }));
-        assert!(page.continuation.is_none());
+        assert_eq!(page.continuation.as_deref(), Some("MAS_FILAS"));
+    }
+
+    #[test]
+    fn en_una_lista_larga_manda_el_token_de_las_pistas() {
+        // Una playlist trae los dos: el de la lista de secciones y el de sus
+        // propias pistas. Coger el equivocado dejaba la lista en 100.
+        let page = parse_page(&json!({
+            "musicPlaylistShelfRenderer": {
+                "contents": [
+                    { "musicResponsiveListItemRenderer": {
+                        "playlistItemData": { "videoId": "aaaaaaaaaaa" },
+                        "flexColumns": [{ "musicResponsiveListItemFlexColumnRenderer":
+                            { "text": { "runs": [{ "text": "Pista" }] } } }]
+                    }},
+                    { "continuationItemRenderer": { "continuationEndpoint": {
+                        "continuationCommand": { "token": "MAS_PISTAS" }
+                    }}}
+                ]
+            },
+            "continuations": [{ "nextContinuationData": { "continuation": "MAS_SECCIONES" } }]
+        }));
+        assert_eq!(page.continuation.as_deref(), Some("MAS_PISTAS"));
+    }
+
+    #[test]
+    fn la_continuacion_del_inicio_llega_como_estanterias_con_nombre() {
+        // Y no aplanada en una sola: son filas distintas del feed.
+        let page = parse_continued(&json!({ "continuationContents": {
+            "sectionListContinuation": { "contents": [
+                carrusel_con("Sube el volumen", json!([tarjeta("A", "aaaaaaaaaaa")])),
+                carrusel_con("Exitos de hoy", json!([tarjeta("B", "bbbbbbbbbbb")])),
+            ]}
+        }}));
+        let titulos: Vec<&str> = page.shelves.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titulos, ["Sube el volumen", "Exitos de hoy"]);
     }
 
     #[test]

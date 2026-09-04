@@ -249,7 +249,19 @@ export const mockApi = {
   home: async () => ({
     title: null,
     subtitle: null,
+    secondSubtitle: null,
+    description: null,
     thumbnail: null,
+    buttons: [],
+    chips: [
+      { label: "Energía", params: "c1" },
+      { label: "Entrenamiento", params: "c2" },
+      { label: "Relax", params: "c3" },
+      { label: "Fiesta", params: "c4" },
+      { label: "Concentración", params: "c5" },
+    ],
+    // Como el de verdad: dos estanterías y token para las siguientes.
+    continuation: "inicio-2",
     shelves: [
       {
         title: "Listas de reproducción de la comunidad populares",
@@ -258,6 +270,17 @@ export const mockApi = {
           id: `VL${t.videoId}`,
           title: `Mix ${t.title}`,
           subtitle: "6,8 M de visualizaciones",
+          thumbnail: COVER,
+          duration: null,
+        })),
+      },
+      {
+        title: "Tropical",
+        items: TRACKS.slice(0, 4).map((t) => ({
+          kind: "playlist" as const,
+          id: `VLtrop${t.videoId}`,
+          title: `Clásicos ${t.title}`,
+          subtitle: "Binomio de Oro, Diomedes Díaz",
           thumbnail: COVER,
           duration: null,
         })),
@@ -280,6 +303,16 @@ export const mockApi = {
     thumbnail: COVER,
     // Solo las listas se parten en tandas, igual que en YouTube.
     continuation: browseId.startsWith("VL") ? "tanda-2" : null,
+    chips:
+      browseId === "FEmusic_home"
+        ? [
+            { label: "Energía", params: "c1" },
+            { label: "Entrenamiento", params: "c2" },
+            { label: "Relax", params: "c3" },
+            { label: "Fiesta", params: "c4" },
+            { label: "Concentración", params: "c5" },
+          ]
+        : [],
     // Las pastillas solo las trae Explorar y las categorías.
     buttons: browseId.startsWith("FEmusic")
       ? [
@@ -323,6 +356,35 @@ export const mockApi = {
   // Dos tandas mas y se acaba: lo justo para probar que el encadenado para.
   browseMore: async (continuation: string) => {
     const n = Number(continuation.split("-")[1]);
+
+    // El inicio manda estanterías con nombre; una lista, filas sueltas. Son las
+    // dos formas de verdad y la interfaz tiene que distinguirlas.
+    if (continuation.startsWith("inicio")) {
+      return {
+        title: null,
+        subtitle: null,
+        secondSubtitle: null,
+        description: null,
+        thumbnail: null,
+        buttons: [],
+        chips: [],
+        continuation: n < 4 ? `inicio-${n + 1}` : null,
+        shelves: [
+          {
+            title: `Estantería ${n}`,
+            items: TRACKS.slice(0, 4).map((t, i) => ({
+              kind: "track" as const,
+              id: `${t.videoId}-e${n}-${i}`,
+              title: `${t.title} (${n})`,
+              subtitle: t.author,
+              thumbnail: COVER,
+              duration: t.d,
+            })),
+          },
+        ],
+      };
+    }
+
     return {
       title: null,
       subtitle: null,
@@ -330,6 +392,7 @@ export const mockApi = {
       description: null,
       thumbnail: null,
       buttons: [],
+      chips: [],
       continuation: n < 3 ? `tanda-${n + 1}` : null,
       shelves: [
         {

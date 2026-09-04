@@ -4,11 +4,13 @@ import { BUSCADOR } from "../lib/atajos";
 import {
   api,
   EXPLORE,
+  HOME,
   thumbAt,
   type BrowsePage,
   type ClientHealth,
   type ExtractorStatus,
   type SavedTrack,
+  type SearchChip,
   type Shelf as ShelfData,
   type ShelfItem,
 } from "../lib/api";
@@ -513,6 +515,7 @@ const VACIO: BrowsePage = {
   thumbnail: null,
   shelves: [],
   buttons: [],
+  chips: [],
   continuation: null,
 };
 
@@ -536,6 +539,18 @@ export function HomeFeed() {
   const [estantes, setEstantes] = createSignal<ShelfData[]>([]);
   const [mix, setMix] = createSignal<{ semilla: SavedTrack; items: ShelfItem[] } | null>(null);
   const [cargando, setCargando] = createSignal(true);
+  const [chips, setChips] = createSignal<SearchChip[]>([]);
+  const [filtro, setFiltro] = createSignal<string | null>(null);
+  const [masToken, setMasToken] = createSignal<string | null>(null);
+  const [trayendo, setTrayendo] = createSignal(false);
+  let centinela!: HTMLDivElement;
+
+  /** Guarda una tanda del feed, venga de donde venga. */
+  const asentar = (p: BrowsePage, reemplazando = false) => {
+    setEstantes((previas) => (reemplazando ? p.shelves : [...previas, ...p.shelves]));
+    if (p.chips.length) setChips(p.chips);
+    setMasToken(p.continuation);
+  };
 
   onMount(async () => {
     // Las tres fuentes van en paralelo: el historial es instantáneo (SQLite),
@@ -572,8 +587,60 @@ export function HomeFeed() {
         });
     }
 
-    setEstantes((await feed).shelves);
+    asentar(await feed, true);
     setCargando(false);
+  });
+
+  /**
+   * Siguiente tanda del feed.
+   *
+   * YouTube manda el inicio de tres en tres estanterías. Sin esto se quedaba en
+   * las dos primeras, que es por lo que parecía tan corto comparado con el de
+   * verdad.
+   */
+  const traerMas = async () => {
+    const token = masToken();
+    if (!token || trayendo()) return;
+    setTrayendo(true);
+    try {
+      asentar(await api.browseMore(token));
+    } catch (e) {
+      console.error("no se pudieron cargar mas estanterias", e);
+      // Se corta el encadenado: reintentar en bucle contra un fallo de red
+      // llenaría la consola sin arreglar nada.
+      setMasToken(null);
+    } finally {
+      setTrayendo(false);
+    }
+  };
+
+  /** Cambia el feed por el de un estado de ánimo, o vuelve al general. */
+  const aplicarFiltro = async (chip: SearchChip | null) => {
+    setFiltro(chip?.params ?? null);
+    setCargando(true);
+    setEstantes([]);
+    setMasToken(null);
+    asentar(await seguro(() => api.browse(HOME, chip?.params), VACIO), true);
+    setCargando(false);
+  };
+
+  onMount(() => {
+    // El centinela dispara cuando asoma por abajo. Igual que en la búsqueda: un
+    // efecto sobre el token además del observador, porque el observador solo
+    // informa de CAMBIOS y con pocas estanterías el centinela ya está a la
+    // vista antes de que exista el token.
+    const observador = new IntersectionObserver(
+      (e) => e[0]?.isIntersecting && traerMas(),
+      { rootMargin: "600px" },
+    );
+    observador.observe(centinela);
+    onCleanup(() => observador.disconnect());
+  });
+
+  createEffect(() => {
+    if (masToken() && centinela.getBoundingClientRect().top < window.innerHeight + 600) {
+      traerMas();
+    }
   });
 
   /** El historial, sin repetir, como tarjetas. */
@@ -609,6 +676,23 @@ export function HomeFeed() {
 
   return (
     <div class="scroll-area h-full flex-1 space-y-9 overflow-y-auto px-8 py-5">
+      {/* Los filtros de arriba, como en YouTube Music. Cambian el feed entero,
+          no filtran lo que ya está pintado. */}
+      <Show when={chips().length > 0}>
+        <div class="flex flex-wrap gap-2">
+          <Chip label="Todo" activo={filtro() === null} onPick={() => aplicarFiltro(null)} />
+          <For each={chips()}>
+            {(c) => (
+              <Chip
+                label={c.label}
+                activo={filtro() === c.params}
+                onPick={() => aplicarFiltro(c)}
+              />
+            )}
+          </For>
+        </div>
+      </Show>
+
       <Show when={volverAEscuchar().length > 0}>
         <Shelf
           subtitle="De lo tuyo"
@@ -638,7 +722,7 @@ export function HomeFeed() {
         </p>
       </Show>
 
-      <Show when={cargando()}>
+      <Show when={cargando() || trayendo()}>
         <div class="flex gap-4">
           <For each={Array(6).fill(0)}>
             {() => (
@@ -651,7 +735,26 @@ export function HomeFeed() {
           </For>
         </div>
       </Show>
+
+      {/* Sin alto propio: solo tiene que asomar para pedir la siguiente tanda. */}
+      <div ref={centinela} class="h-px" />
     </div>
+  );
+}
+
+/** Una pastilla de filtro del inicio. */
+function Chip(p: { label: string; activo: boolean; onPick: () => void }) {
+  return (
+    <button
+      class="rounded-lg border px-3.5 py-1.5 text-[12.5px] font-semibold transition-colors"
+      classList={{
+        "border-white/80 bg-white text-black": p.activo,
+        "border-white/15 bg-white/[0.08] text-white/85 hover:bg-white/15": !p.activo,
+      }}
+      onClick={p.onPick}
+    >
+      {p.label}
+    </button>
   );
 }
 

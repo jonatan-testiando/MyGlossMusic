@@ -27,6 +27,18 @@ const MUSIC_PLAYER_URL: &str = "https://music.youtube.com/youtubei/v1/player";
 #[derive(Clone)]
 pub struct InnerTube {
     http: reqwest::Client,
+    /// Identificador de sesion anonima que devuelve YouTube.
+    ///
+    /// NO es una cuenta ni una cookie: es un campo del cuerpo de la peticion
+    /// que YouTube genera solo y que sirve para que varias peticiones seguidas
+    /// se traten como la misma visita. No identifica a nadie y no viola la
+    /// regla de oro — se sigue sin cookies y sin sesion de Google.
+    ///
+    /// Hace falta para las continuaciones del inicio, y SOLO para eso: pedir la
+    /// segunda tanda sin el mismo `visitorData` devuelve una cascara vacia, sin
+    /// error. Comprobado. Lo que NO hace es enriquecer el feed: con el o sin el,
+    /// el inicio anonimo trae las mismas 8 estanterias genericas.
+    visitor: std::sync::Arc<std::sync::RwLock<Option<String>>>,
 }
 
 impl InnerTube {
@@ -36,7 +48,29 @@ impl InnerTube {
             .timeout(std::time::Duration::from_secs(20))
             .build()
             .context("no se pudo construir el cliente HTTP")?;
-        Ok(Self { http })
+        Ok(Self { http, visitor: Default::default() })
+    }
+
+    /// El identificador de sesion, si YouTube ya nos ha dado uno.
+    pub(crate) fn visitor(&self) -> Option<String> {
+        self.visitor.read().ok().and_then(|v| v.clone())
+    }
+
+    /// Se queda con el identificador que venga en una respuesta.
+    ///
+    /// El primero manda: cambiarlo a mitad de una serie de continuaciones es
+    /// justo lo que rompe la serie.
+    pub(crate) fn remember_visitor(&self, respuesta: &serde_json::Value) {
+        let Some(id) = respuesta
+            .get("responseContext")
+            .and_then(|c| c.get("visitorData"))
+            .and_then(serde_json::Value::as_str)
+        else {
+            return;
+        };
+        if let Ok(mut guardado) = self.visitor.write() {
+            guardado.get_or_insert_with(|| id.to_string());
+        }
     }
 
     /// Cliente HTTP interno, para otros endpoints anonimos (busqueda).

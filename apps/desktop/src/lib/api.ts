@@ -116,6 +116,9 @@ export interface Shelf {
  */
 export const EXPLORE = "FEmusic_explore";
 
+/** Feed de inicio. Se pide por `browse` cuando hay que aplicarle un filtro. */
+export const HOME = "FEmusic_home";
+
 /** Una pastilla de Explorar: texto, destino y su franja de color. */
 export interface NavButton {
   label: string;
@@ -134,6 +137,8 @@ export interface BrowsePage {
   thumbnail: string | null;
   shelves: Shelf[];
   buttons: NavButton[];
+  /** Filtros de estado de ánimo. Solo los trae el inicio. */
+  chips: SearchChip[];
   /** Token de la siguiente tanda. YouTube corta las listas de 100 en 100. */
   continuation: string | null;
 }
