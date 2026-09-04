@@ -62,6 +62,28 @@ jobs:
         if: startsWith(matrix.plataforma, 'macos')
         run: brew install autoconf automake libtool
 
+      # Para x86_64 en runners de GitHub Actions (que son Apple Silicon arm64), audiopus_sys intenta
+      # compilar Opus llamando a ./configure sin especificar la arquitectura de destino, lo que genera
+      # objetos arm64 incompatibles con el linker x86_64. Precompilamos Opus con CMake indicando
+      # CMAKE_OSX_ARCHITECTURES="x86_64" y configuramos OPUS_LIB_DIR para que audiopus_sys use este binario directamente.
+      - name: Precompilar Opus para x86_64 macOS
+        if: matrix.triple == 'x86_64-apple-darwin'
+        run: |
+          git clone --depth 1 https://github.com/xiph/opus.git /tmp/opus-src
+          cmake -B /tmp/opus-build -S /tmp/opus-src \
+            -DCMAKE_OSX_ARCHITECTURES="x86_64" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DOPUS_BUILD_TESTING=OFF \
+            -DOPUS_BUILD_PROGRAMS=OFF
+          cmake --build /tmp/opus-build --config Release
+          mkdir -p /tmp/opus-lib
+          find /tmp/opus-build -name "libopus.a" -exec cp {} /tmp/opus-lib/ \;
+          lipo -info /tmp/opus-lib/libopus.a
+          echo "OPUS_LIB_DIR=/tmp/opus-lib" >> $GITHUB_ENV
+          echo "OPUS_STATIC=1" >> $GITHUB_ENV
+
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.triple }}
