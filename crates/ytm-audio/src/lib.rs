@@ -581,7 +581,37 @@ impl Inner {
 
         self.prefetch_next();
         self.podar_cache();
+        self.rellenar_metadatos(&track.video_id).await;
         Ok(())
+    }
+
+    /// Ultimo recurso para el titulo, la caratula y la duracion.
+    ///
+    /// Se llama DESPUES de que suene, no antes: es una peticion mas y no tiene
+    /// por que retrasar la reproduccion ni un milisegundo. Y solo cuando de
+    /// verdad falta el titulo, que es el caso raro — cuando el plano de audio
+    /// no pudo resolver la pista y el audio vino de yt-dlp o del acunador.
+    ///
+    /// Antes de esto, esas pistas sonaban con "Sin titulo / Desconocido" y sin
+    /// caratula para siempre: no habia ninguna segunda oportunidad.
+    async fn rellenar_metadatos(&mut self, video_id: &str) {
+        if self.queue.current().is_some_and(|t| t.title.is_some()) {
+            return;
+        }
+        match ytm_source::metadata(&self.innertube, video_id).await {
+            Ok(info) => {
+                tracing::info!(video_id, title = ?info.title, "metadatos recuperados aparte");
+                if info.duration_ms.is_some() && self.current_duration.is_zero() {
+                    self.current_duration = Duration::from_millis(info.duration_ms.unwrap());
+                }
+                self.queue.set_current_meta(info);
+                // La cola cambia de contenido: sin subir la revision, la
+                // interfaz la descarta por repetida y se queda el "Sin titulo".
+                self.queue_rev += 1;
+                self.publish();
+            }
+            Err(e) => tracing::warn!(video_id, error = %e, "tampoco hubo metadatos de respaldo"),
+        }
     }
 
     /// Volumen del usuario por la correccion de la pista.

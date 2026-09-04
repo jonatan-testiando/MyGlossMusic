@@ -154,6 +154,20 @@ async fn main() -> Result<()> {
             }
             Ok(())
         }
+        "meta" => {
+            // Comprobacion del repuesto de metadatos: es una peticion del plano
+            // de biblioteca, asi que responde aunque el audio no se pueda
+            // resolver. `ytm-spike meta <videoId>`.
+            let id = args.get(1).context("falta el videoId")?;
+            let it = InnerTube::new()?;
+            let m = ytm_source::metadata(&it, id).await?;
+            println!();
+            println!("  titulo    {}", m.title.as_deref().unwrap_or("(ninguno)"));
+            println!("  autor     {}", m.author.as_deref().unwrap_or("(ninguno)"));
+            println!("  duracion  {} ms", m.duration_ms.unwrap_or(0));
+            println!("  caratula  {}", m.thumbnail.as_deref().unwrap_or("(ninguna)"));
+            Ok(())
+        }
         "radio" => {
             let id = video_id_arg(&args)?;
             let it = InnerTube::new()?;

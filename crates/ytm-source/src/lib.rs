@@ -63,6 +63,44 @@ pub struct Resolved {
 ///
 /// Esta cascada es el corazon de la antifragilidad: que Google cierre un cliente
 /// degrada el rendimiento, no rompe la aplicacion.
+/// Titulo, autor, portada y duracion de una pista, sin tocar el audio.
+///
+/// # Para que hace falta si `resolve` ya los trae
+///
+/// Porque `resolve` puede no traerlos. Vive en el PLANO DE AUDIO, donde hay que
+/// suplantar a un cliente de movil para conseguir la URL, y cuando ninguno lo
+/// consigue no hay pista de la que sacar el titulo. Entonces entra yt-dlp o el
+/// acunador, que devuelven audio pero no siempre metadatos — el acunador nunca.
+/// Resultado: la cancion sonaba y en pantalla ponia "Sin titulo / Desconocido",
+/// sin caratula, para siempre.
+///
+/// Esto es una peticion del PLANO DE BIBLIOTECA y por eso no le afecta nada de
+/// lo anterior: se pide con `WEB_REMIX`, que es el cliente de verdad de
+/// music.youtube.com, y no se le piden streams. Sin streams no hay atestacion
+/// que valga: `videoDetails` llega igual, en unos 9 KB. Comprobado.
+///
+/// Anonima, como todo lo demas: sin cookies.
+pub async fn metadata(it: &InnerTube, video_id: &str) -> Result<TrackInfo> {
+    let res = it.player(video_id, clients::WEB_REMIX).await?;
+    let details = res
+        .video_details
+        .ok_or_else(|| anyhow::anyhow!("la respuesta no trae videoDetails"))?;
+
+    Ok(TrackInfo {
+        video_id: video_id.to_string(),
+        title: details.title,
+        author: details.author,
+        // La ultima es la mas grande. Es la misma convencion que en `search.rs`.
+        thumbnail: details
+            .thumbnail
+            .and_then(|t| t.thumbnails.last().map(|m| m.url.clone())),
+        duration_ms: details
+            .length_seconds
+            .and_then(|s| s.parse::<u64>().ok())
+            .map(|s| s * 1000),
+    })
+}
+
 pub async fn resolve(it: &InnerTube, video_id: &str) -> Result<Resolved> {
     let mut errors: Vec<String> = Vec::new();
 
