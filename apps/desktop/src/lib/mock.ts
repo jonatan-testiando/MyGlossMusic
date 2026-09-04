@@ -155,6 +155,7 @@ const saved: SavedTrack[] = TRACKS.slice(0, 4).map((t, i) => ({
 let favs: SavedTrack[] = saved.slice(0, 2);
 
 let limiteFalso = 3 * 1024 * 1024 * 1024;
+let normalizaFalso = true;
 
 export const mockApi = {
   playlist: async () => ({ title: "Playlist de prueba", tracks: results }),
@@ -422,6 +423,10 @@ export const mockApi = {
   clearCache: async () => 61,
   setCacheLimit: async (bytes: number) => {
     limiteFalso = bytes;
+  },
+  settings: async () => ({ normalize: normalizaFalso }),
+  setNormalize: async (on: boolean) => {
+    normalizaFalso = on;
   },
   appVersion: async () => "0.1.0",
   extractorStatus: async () => ({ available: true, version: "2026.08.19", program: "yt-dlp.exe (sidecar)" }),

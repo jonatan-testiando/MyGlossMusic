@@ -1,5 +1,7 @@
 import { createSignal, createEffect, on } from "solid-js";
 import { cambiarConPortada } from "./transicion";
+import { avisar, avisarError, motivo, vigilarConexion } from "./toast";
+import { instalarAtajos } from "./atajos";
 import { createStore, reconcile } from "solid-js/store";
 import {
   api,
@@ -171,19 +173,23 @@ export async function createPlaylist(name: string): Promise<number | null> {
     return id;
   } catch (e) {
     console.error("no se pudo crear la playlist", e);
+    avisarError(motivo(e, "No se pudo crear la playlist."));
     return null;
   }
 }
 
 export async function deletePlaylist(id: number) {
+  const nombre = playlists().find((l) => l.id === id)?.name;
   try {
     await api.deletePlaylist(id);
+    avisar(nombre ? `«${nombre}» eliminada` : "Playlist eliminada");
     // Si estaba abierta, se cierra: dejarla en pantalla mostraría una lista
     // que ya no existe.
     if (openPlaylist()?.lista.id === id) setOpenPlaylist(null);
     await refreshPlaylists();
   } catch (e) {
     console.error("no se pudo borrar la playlist", e);
+    avisarError(motivo(e, "No se pudo borrar la playlist."));
   }
 }
 
@@ -201,6 +207,7 @@ export async function renamePlaylist(id: number, name: string) {
     }
   } catch (e) {
     console.error("no se pudo renombrar la playlist", e);
+    avisarError(motivo(e, "No se pudo cambiar el nombre."));
   }
 }
 
@@ -210,6 +217,7 @@ export async function showPlaylist(lista: Playlist) {
     setOpenPlaylist({ lista, tracks: await api.playlistTracks(lista.id) });
   } catch (e) {
     console.error("no se pudo abrir la playlist", e);
+    avisarError(motivo(e, "No se pudo abrir la playlist."));
     setOpenPlaylist({ lista, tracks: [] });
   }
 }
@@ -218,11 +226,16 @@ export async function addTrackToPlaylist(id: number, track: Partial<Track>) {
   try {
     await api.addToPlaylist(id, track);
     await refreshPlaylists();
+    // Es la única acción de la aplicación que no deja ni rastro en pantalla:
+    // el diálogo se cierra y la canción sigue donde estaba.
+    const lista = playlists().find((l) => l.id === id);
+    avisar(`Añadida a «${lista?.name ?? "la playlist"}»`);
     // Si es la que está abierta, se refresca para que la pista aparezca ya.
     const abierta = openPlaylist();
     if (abierta?.lista.id === id) showPlaylist(abierta.lista);
   } catch (e) {
     console.error("no se pudo anadir a la playlist", e);
+    avisarError(motivo(e, "No se pudo añadir a la playlist."));
   }
 }
 
@@ -234,6 +247,7 @@ export async function removeTrackFromPlaylist(id: number, videoId: string) {
     if (abierta?.lista.id === id) showPlaylist(abierta.lista);
   } catch (e) {
     console.error("no se pudo quitar de la playlist", e);
+    avisarError(motivo(e, "No se pudo quitar de la playlist."));
   }
 }
 
@@ -252,6 +266,29 @@ const [posicion, setPosicion] = createSignal(0);
 
 export const puedeAtras = () => posicion() > 0;
 export const puedeAdelante = () => posicion() < historial().length - 1;
+
+/**
+ * Los botones laterales del ratón, atrás y adelante.
+ *
+ * Van en `mouseup` y no en `mousedown`: en `mousedown` el navegador todavía
+ * puede convertirlos en su propia navegación. Los botones 3 y 4 son los
+ * laterales; el 2 es la rueda y no se toca.
+ */
+function instalarBotonesDelRaton() {
+  window.addEventListener("mouseup", (e) => {
+    if (e.button === 3) {
+      e.preventDefault();
+      atras();
+    } else if (e.button === 4) {
+      e.preventDefault();
+      adelante();
+    }
+  });
+  // Sin esto, Windows deja además el menú contextual de retroceso del WebView.
+  window.addEventListener("mousedown", (e) => {
+    if (e.button === 3 || e.button === 4) e.preventDefault();
+  });
+}
 
 /** Va a un destino nuevo, descartando lo que hubiera hacia delante. */
 export function navegar(d: Destino) {
@@ -321,6 +358,7 @@ async function cargarBrowse(id: string) {
     await tandasEnCurso;
   } catch (e) {
     console.error("no se pudo abrir la pagina", e);
+    avisarError(motivo(e, "No se pudo abrir esta página."));
     if (gen === generacionBrowse) setBrowsePage(null);
   } finally {
     if (gen === generacionBrowse) setBrowseLoading(false);
@@ -347,6 +385,7 @@ async function completarBrowse(gen: number, primerToken: string | null) {
       } catch (e) {
         // Media lista es mejor que ninguna: se deja lo que haya llegado.
         console.error("se cortó la lista al pedir más pistas", e);
+        avisarError(motivo(e, "La lista se ha quedado a medias."));
         return;
       }
       if (gen !== generacionBrowse) return;
@@ -431,10 +470,12 @@ export async function saveBrowseAsPlaylist(nombre?: string) {
       });
     }
     await refreshPlaylists();
+    avisar(`Guardadas ${pistas.length} canciones`);
     const lista = playlists().find((l) => l.id === id);
     if (lista) showPlaylist(lista);
   } catch (e) {
     console.error("no se pudo guardar la playlist", e);
+    avisarError(motivo(e, "No se pudo guardar la playlist."));
   } finally {
     setSavingBrowse(false);
   }
@@ -556,6 +597,9 @@ function adoptQueue(s: PlaybackState): PlaybackState {
 }
 
 export function initStore() {
+  vigilarConexion();
+  instalarAtajos();
+  instalarBotonesDelRaton();
   refreshPlaylists();
   api.getState().then((s) => setPlayback(reconcile(adoptQueue(s))));
 
@@ -592,6 +636,18 @@ export function initStore() {
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+
+  // Un fallo del motor no se veía por ningún sitio: la canción simplemente no
+  // sonaba. `on` con el mensaje como fuente para que el mismo error repetido en
+  // varios estados seguidos no saque un aviso por cada uno.
+  createEffect(
+    on(
+      () => playback.error,
+      (e) => {
+        if (e) avisarError(motivo(e, "No se pudo reproducir esta canción."));
+      },
+    ),
+  );
 
   // El estado de favorito se consulta al cambiar de pista, no en cada tick.
   createEffect(
@@ -662,6 +718,7 @@ export async function toggleFavorite() {
     setIsFavorite(await api.toggleFavorite());
   } catch (e) {
     console.error("no se pudo marcar como favorito", e);
+    avisarError(motivo(e, "No se pudo marcar como favorito."));
   }
 }
 
@@ -739,6 +796,7 @@ export async function runSearch(q: string) {
     }
   } catch (e) {
     console.error("busqueda fallida", e);
+    avisarError(motivo(e, "La búsqueda ha fallado."));
     setResults([]);
     setSearchChips([]);
   } finally {
@@ -819,6 +877,7 @@ export async function applySearchFilter(params: string | null) {
     );
   } catch (e) {
     console.error("no se pudo filtrar", e);
+    avisarError(motivo(e, "No se pudo aplicar el filtro."));
   } finally {
     setSearching(false);
   }
@@ -848,6 +907,7 @@ export async function loadMoreResults() {
     setSearchMoreToken(page.continuation);
   } catch (e) {
     console.error("no se pudieron cargar mas resultados", e);
+    avisarError(motivo(e, "No se pudieron cargar más resultados."));
     // Sin token no se reintenta en bucle contra un servidor que ya dijo que no.
     setSearchMoreToken(null);
     setSearchOverflow(null);

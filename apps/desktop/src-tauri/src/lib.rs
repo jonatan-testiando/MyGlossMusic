@@ -411,6 +411,31 @@ fn set_cache_limit(state: tauri::State<'_, App>, bytes: u64) -> Result<(), Strin
     Ok(())
 }
 
+/// Iguala el volumen entre pistas, o deja de hacerlo.
+#[tauri::command]
+fn set_normalize(state: tauri::State<'_, App>, on: bool) -> Result<(), String> {
+    state
+        .db
+        .set_setting("normalize", if on { "true" } else { "false" })
+        .map_err(|e| e.to_string())?;
+    state.engine.send(Command::SetNormalize(on));
+    Ok(())
+}
+
+/// Ajustes que guarda el backend y que la interfaz necesita al arrancar.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Ajustes {
+    normalize: bool,
+}
+
+#[tauri::command]
+fn settings(state: tauri::State<'_, App>) -> Ajustes {
+    Ajustes {
+        normalize: state.db.get_setting("normalize").as_deref() != Some("false"),
+    }
+}
+
 /// Version de la aplicacion, de `Cargo.toml`.
 #[tauri::command]
 fn app_version() -> String {
@@ -728,6 +753,11 @@ pub fn run() {
                 engine.send(Command::SetShuffle(true));
             }
             engine.send(Command::SetCacheLimit(limite_cache(&database)));
+            // Igualar volumen viene puesto: hay casi 6 dB entre unas pistas y
+            // otras, y quien no lo quiera lo apaga en Ajustes.
+            engine.send(Command::SetNormalize(
+                database.get_setting("normalize").as_deref() != Some("false"),
+            ));
 
             // Esquinas redondeadas via DWM. La ventana dejo de ser transparente
             // (transparent + WebView2 se congela al restaurar desde minimizado
@@ -971,6 +1001,8 @@ pub fn run() {
             history,
             storage_info,
             set_cache_limit,
+            set_normalize,
+            settings,
             clear_cache,
             app_version,
             create_playlist,

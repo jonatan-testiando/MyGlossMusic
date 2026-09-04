@@ -66,6 +66,41 @@ struct Prepared {
 }
 use ytm_source::{InnerTube, TrackInfo};
 
+/// Factor de volumen que iguala una pista con las demas.
+///
+/// # De donde sale el numero
+///
+/// No hay que medir nada: YouTube ya trae la medicion hecha. En la respuesta
+/// del reproductor, `playerConfig.audioConfig` da el volumen absoluto de la
+/// pista y el objetivo al que se normaliza, y cada formato trae ya la resta
+/// —eso es `loudness_db`—, es decir, cuantos dB se pasa la pista del objetivo.
+/// Comprobado sobre cuatro pistas reales:
+///
+/// | pista                    | absoluto   | objetivo   | `loudness_db` |
+/// |--------------------------|-----------:|-----------:|--------------:|
+/// | Never Gonna Give You Up  | -13,01 LKFS| -14 LKFS   |      0,99 dB  |
+/// | Blinding Lights          | -10,59     | -14        |      3,41     |
+/// | Fool For You             |  -7,25     | -14        |      6,75     |
+///
+/// Casi 6 dB entre la primera y la ultima: eso es lo que obliga a tocar la
+/// rueda de volumen en cada cambio de cancion.
+///
+/// # El tope
+///
+/// De dB a factor lineal es `10^(-dB/20)`. Se acota a [0,25, 2,0] por una razon
+/// concreta: subir el volumen de una pista que ya venia baja puede recortar los
+/// picos, y aqui no hay limitador que lo recoja. Dos es el maximo que se
+/// permite subir; por debajo, bajar nunca distorsiona, y el tope de 0,25 solo
+/// esta para que un dato absurdo no deje la cancion muda.
+///
+/// Sin dato, factor 1: no tocar nada es siempre mejor que adivinar.
+fn ganancia_de(loudness_db: Option<f32>) -> f32 {
+    let Some(db) = loudness_db.filter(|d| d.is_finite()) else {
+        return 1.0;
+    };
+    10f32.powf(-db / 20.0).clamp(0.25, 2.0)
+}
+
 /// Cadencia de publicacion de estado. 100 ms basta para que una barra de
 /// progreso se vea fluida sin despertar la interfaz sin motivo.
 const TICK: Duration = Duration::from_millis(100);
@@ -94,6 +129,8 @@ pub enum Command {
     SetShuffle(bool),
     /// Cuanto puede ocupar la cache en disco, en bytes. 0 es sin limite.
     SetCacheLimit(u64),
+    /// Iguala el volumen entre pistas. Ver [`ganancia_de`].
+    SetNormalize(bool),
     Stop,
 }
 
@@ -200,6 +237,8 @@ impl Engine {
             loading: false,
             source_provider,
             cache_limit: cache::DEFAULT_LIMIT,
+            normalizar: true,
+            ganancia: 1.0,
             prepared: Arc::new(Mutex::new(HashMap::new())),
             partial_warned: false,
             queue_rev: 0,
@@ -323,6 +362,10 @@ struct Inner {
     source_provider: Option<SourceProvider>,
     /// Tope de la cache en disco. Ver [`cache::prune`].
     cache_limit: u64,
+    /// Igualar el volumen entre pistas.
+    normalizar: bool,
+    /// Correccion de la pista actual, ya en factor lineal. Ver [`ganancia_de`].
+    ganancia: f32,
     /// Pistas precargadas, por id. Reproducir una que ya esta aqui reutiliza la
     /// descarga en curso en vez de abrir otra sobre el mismo archivo.
     prepared: Arc<Mutex<HashMap<String, Prepared>>>,
@@ -422,13 +465,17 @@ impl Inner {
             Command::Seek(pos) => self.seek(pos).await?,
             Command::SetVolume(v) => {
                 self.volume = v.clamp(0.0, 2.0);
-                self.player.set_volume(self.volume);
+                self.aplicar_volumen();
             }
             Command::SetRepeat(r) => self.queue.set_repeat(r),
             Command::SetShuffle(on) => self.queue.set_shuffle(on),
             Command::SetCacheLimit(bytes) => {
                 self.cache_limit = bytes;
                 self.podar_cache();
+            }
+            Command::SetNormalize(on) => {
+                self.normalizar = on;
+                self.aplicar_volumen();
             }
             Command::Stop => self.stop(),
         }
@@ -517,8 +564,14 @@ impl Inner {
         let source = decode::SymphoniaSource::new(reader, ext)
             .map_err(|e| anyhow::anyhow!("no se pudo decodificar ({ext}): {e:#}"))?;
 
+        self.ganancia = if self.normalizar {
+            ganancia_de(resolved.as_ref().and_then(|r| r.audio.loudness_db))
+        } else {
+            1.0
+        };
+
         self.player.clear();
-        self.player.set_volume(self.volume);
+        self.aplicar_volumen();
         self.player.append(source);
         self.player.play();
 
@@ -529,6 +582,12 @@ impl Inner {
         self.prefetch_next();
         self.podar_cache();
         Ok(())
+    }
+
+    /// Volumen del usuario por la correccion de la pista.
+    fn aplicar_volumen(&self) {
+        let g = if self.normalizar { self.ganancia } else { 1.0 };
+        self.player.set_volume(self.volume * g);
     }
 
     /// Recorta la cache si se ha pasado del tope.
@@ -647,5 +706,48 @@ impl Inner {
             error: self.error.clone(),
         };
         let _ = self.state.send(state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ganancia_de;
+
+    /// Los tres numeros son medidas reales, no inventados. Ver `ganancia_de`.
+    #[test]
+    fn iguala_pistas_de_volumenes_distintos() {
+        let suave = ganancia_de(Some(0.99)); // Never Gonna Give You Up
+        let media = ganancia_de(Some(3.41)); // Blinding Lights
+        let fuerte = ganancia_de(Some(6.75)); // Fool For You
+
+        // A mas alta la pista, mas se la baja.
+        assert!(fuerte < media && media < suave && suave < 1.0);
+
+        // Y despues de corregir, las tres suenan al mismo nivel: la diferencia
+        // entre ellas era de 5,76 dB y se queda por debajo de una decima.
+        let nivel = |db: f32, g: f32| db + 20.0 * g.log10();
+        assert!((nivel(0.99, suave) - nivel(6.75, fuerte)).abs() < 0.1);
+    }
+
+    #[test]
+    fn sin_dato_no_se_toca_nada() {
+        // Adivinar es peor que no hacer nada: una pista sin medicion se queda
+        // como esta en vez de moverse a un nivel supuesto.
+        assert_eq!(ganancia_de(None), 1.0);
+        assert_eq!(ganancia_de(Some(f32::NAN)), 1.0);
+        assert_eq!(ganancia_de(Some(0.0)), 1.0);
+    }
+
+    #[test]
+    fn una_pista_baja_se_sube_pero_con_tope() {
+        // Subir puede recortar los picos y aqui no hay limitador. Se permite
+        // hasta el doble y ni un poco mas, por absurdo que sea el dato.
+        assert!(ganancia_de(Some(-3.0)) > 1.0);
+        assert_eq!(ganancia_de(Some(-40.0)), 2.0);
+    }
+
+    #[test]
+    fn un_dato_disparatado_no_deja_la_cancion_muda() {
+        assert_eq!(ganancia_de(Some(90.0)), 0.25);
     }
 }

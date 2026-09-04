@@ -438,12 +438,6 @@ fn kmeans(points: &[Oklab], k: usize, iters: usize) -> Vec<Cluster> {
         .collect()
 }
 
-/// Descarga una portada y extrae su paleta.
-pub async fn from_url(http: &reqwest::Client, url: &str) -> anyhow::Result<Palette> {
-    let bytes = http.get(url).send().await?.error_for_status()?.bytes().await?;
-    from_bytes(&bytes)
-}
-
 /// Extrae la paleta de una imagen ya descargada.
 pub fn from_bytes(bytes: &[u8]) -> anyhow::Result<Palette> {
     let img = image::load_from_memory(bytes)?;

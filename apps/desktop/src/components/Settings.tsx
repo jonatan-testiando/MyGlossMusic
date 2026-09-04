@@ -88,6 +88,7 @@ export function SettingsDialog() {
   const [seccion, setSeccion] = createSignal<Seccion>("general");
   const [almacen, setAlmacen] = createSignal<Storage | null>(null);
   const [version, setVersion] = createSignal("");
+  const [normaliza, setNormaliza] = createSignal(true);
   const [limpiando, setLimpiando] = createSignal(false);
 
   const cargarAlmacen = async () => {
@@ -101,6 +102,7 @@ export function SettingsDialog() {
   onMount(() => {
     cargarAlmacen();
     api.appVersion().then(setVersion).catch(() => setVersion("?"));
+    api.settings().then((a) => setNormaliza(a.normalize)).catch(() => {});
     refreshExtractor();
 
     const escape = (e: KeyboardEvent) => {
@@ -166,6 +168,30 @@ export function SettingsDialog() {
                   label="Fondo animado"
                 />
               </Fila>
+              <Fila
+                titulo="Igualar el volumen entre canciones"
+                nota="Usa la medición que trae YouTube con cada pista. Sin esto hay casi 6 dB de diferencia entre unas y otras, y hay que tocar la rueda en cada cambio."
+              >
+                <Interruptor
+                  on={normaliza()}
+                  onToggle={async () => {
+                    const v = !normaliza();
+                    setNormaliza(v);
+                    await api.setNormalize(v);
+                  }}
+                  label="Igualar el volumen entre canciones"
+                />
+              </Fila>
+
+              <Fila
+                titulo="Atajos de teclado"
+                nota="Espacio o K reproduce y pausa · J y L saltan 10 s · ← y → saltan 5 s · ↑ y ↓ cambian el volumen · M silencia · / busca. No actúan mientras escribes."
+              >
+                <span class="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-white/70">
+                  Siempre
+                </span>
+              </Fila>
+
               <Fila
                 titulo="Modo anónimo"
                 nota="No hay sesión iniciada y las peticiones de audio nunca llevan cookies. No es configurable: es cómo está construida la aplicación."

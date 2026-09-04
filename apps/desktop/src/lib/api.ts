@@ -149,6 +149,11 @@ export interface Storage {
   dataDir: string;
 }
 
+/** Ajustes que viven en el backend porque el motor los necesita al arrancar. */
+export interface Ajustes {
+  normalize: boolean;
+}
+
 export interface ExtractorStatus {
   available: boolean;
   version: string | null;
@@ -217,6 +222,8 @@ const realApi = {
   storageInfo: () => invoke<Storage>("storage_info"),
   clearCache: () => invoke<number>("clear_cache"),
   setCacheLimit: (bytes: number) => invoke<void>("set_cache_limit", { bytes }),
+  settings: () => invoke<Ajustes>("settings"),
+  setNormalize: (on: boolean) => invoke<void>("set_normalize", { on }),
   appVersion: () => invoke<string>("app_version"),
 
   minimize: () => (inTauri ? getCurrentWindow().minimize() : Promise.resolve()),

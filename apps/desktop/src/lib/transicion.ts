@@ -115,11 +115,21 @@ export function cambiarConPortada(abriendo: boolean, cambiar: () => void) {
   const terminar = () => {
     if (hecho) return;
     hecho = true;
+    window.removeEventListener("resize", alRedimensionar);
     destino.el.style.opacity = "";
     destino.el.style.transition = transicionPrevia;
     clon.remove();
   };
   animacion.addEventListener("finish", terminar);
+
+  // Redimensionar a mitad de vuelo deja el clon yendo hacia unas coordenadas
+  // que ya no existen. Se corta y se enseña la portada de verdad, que el
+  // navegador ya ha recolocado por su cuenta.
+  function alRedimensionar() {
+    animacion.cancel();
+    terminar();
+  }
+  window.addEventListener("resize", alRedimensionar, { once: true });
 
   // El temporizador no es un adorno, es la garantía. Los eventos de animación
   // se despachan en el bucle de dibujado, así que una ventana que no está

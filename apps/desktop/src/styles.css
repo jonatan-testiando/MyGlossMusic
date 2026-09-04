@@ -621,3 +621,21 @@ body {
     animation: none;
   }
 }
+
+/* Los avisos entran desde su esquina, no de la nada. */
+@keyframes aviso-entra {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+}
+
+.aviso-entra {
+  animation: aviso-entra 220ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aviso-entra {
+    animation: none;
+  }
+}

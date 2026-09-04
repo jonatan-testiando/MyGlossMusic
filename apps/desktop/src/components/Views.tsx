@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import { PlaylistMenu } from "./Playlists";
+import { BUSCADOR } from "../lib/atajos";
 import {
   api,
   thumbAt,
@@ -232,6 +233,7 @@ function SearchBox() {
             // el desplegable desaparece antes de que se registre.
             onBlur={() => setTimeout(() => setAbierto(false), 120)}
             onKeyDown={enTecla}
+            {...{ [BUSCADOR]: "" }}
             placeholder="Buscar canciones, álbumes, artistas o podcasts"
             class="w-full bg-transparent text-sm text-white outline-none placeholder:text-white/40"
             autocomplete="off"

@@ -18,6 +18,7 @@ import {
 } from "./components/Playlists";
 import { SettingsDialog } from "./components/Settings";
 import { Ambient } from "./components/Ambient";
+import { Toasts } from "./components/Toasts";
 import {
   initStore,
   palette,
@@ -208,6 +209,10 @@ export default function App() {
       <Show when={settingsOpen()}>
         <SettingsDialog />
       </Show>
+
+      {/* Encima de todo: un aviso que quedara debajo de un diálogo no serviría
+          de nada, y es justo desde un diálogo desde donde salen la mitad. */}
+      <Toasts />
     </div>
   );
 }
