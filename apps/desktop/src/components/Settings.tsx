@@ -6,6 +6,9 @@ import {
   setSettingsOpen,
   extractor,
   refreshExtractor,
+  aplicarEscala,
+  escalaUi,
+  ESCALAS,
   setInstalandoUpdate,
   setUpdateReady,
   updateProgress,
@@ -238,6 +241,24 @@ export function SettingsDialog() {
 
           <div class="scroll-area flex-1 overflow-y-auto px-6 py-2">
             <Show when={seccion() === "general"}>
+              <Fila
+                titulo="Tamaño de la interfaz"
+                nota="Agranda la letra y todo lo demás con ella, para que las proporciones no se rompan. Se aplica al momento."
+              >
+                <select
+                  class="rounded-full border border-white/10 bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white outline-none"
+                  value={String(escalaUi())}
+                  onChange={(e) => aplicarEscala(Number(e.currentTarget.value))}
+                >
+                  <For each={ESCALAS}>
+                    {(pct) => (
+                      <option value={String(pct)} class="bg-neutral-900">
+                        {pct} %{pct === 100 ? " (original)" : ""}
+                      </option>
+                    )}
+                  </For>
+                </select>
+              </Fila>
               <Fila
                 titulo="Fondo animado"
                 nota="La portada, desenfocada y en movimiento. Apagarlo deja un fondo fijo con los colores de la canción y ahorra GPU."

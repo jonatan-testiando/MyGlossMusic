@@ -189,6 +189,98 @@ export function setAmbientEnabled(on: boolean) {
   }
 }
 
+/* ------------------------------------------------ Tamaño de la interfaz */
+
+/**
+ * Cuánto se agranda TODO: letra, iconos, márgenes y carátulas.
+ *
+ * # Por qué escala todo y no solo el texto
+ *
+ * Porque agrandar solo la letra no arregla la legibilidad, la rompe. La
+ * interfaz mezcla 21 tamaños distintos y la mitad son literales en píxeles
+ * (`text-[10.5px]`, `text-[13.5px]`) junto a iconos con el tamaño en píxeles
+ * también. Subiendo solo el texto, los iconos se quedan atrás, los botones se
+ * desbordan y las columnas fijas del lateral empiezan a cortar palabras.
+ *
+ * `zoom` en la raíz agranda el conjunto en bloque y las proporciones se
+ * mantienen exactamente como están diseñadas. El lienzo del fondo aguanta
+ * porque se mide con `clientWidth` y un `ResizeObserver` (ver `Ambient.tsx`),
+ * así que se entera del cambio como de cualquier otro redimensionado.
+ *
+ * En localStorage y no en SQLite por lo mismo que el fondo: lo lee la interfaz
+ * al montar, y una ida y vuelta al backend se vería como un salto de tamaño.
+ */
+const ESCALA_KEY = "myglossmusic.escala";
+
+/** Los pasos que se ofrecen, en porcentaje. */
+export const ESCALAS = [100, 110, 120, 135, 150] as const;
+
+/**
+ * 110 y no 100: el tamaño de partida era el de la referencia, que se diseñó
+ * para una ventana de navegador a pantalla completa, y aquí se queda corto.
+ */
+const ESCALA_POR_DEFECTO = 110;
+
+export const [escalaUi, setEscalaSignal] = createSignal(
+  (() => {
+    try {
+      const guardada = Number(localStorage.getItem(ESCALA_KEY));
+      return ESCALAS.includes(guardada as (typeof ESCALAS)[number])
+        ? guardada
+        : ESCALA_POR_DEFECTO;
+    } catch {
+      return ESCALA_POR_DEFECTO;
+    }
+  })(),
+);
+
+/**
+ * Ancho, en píxeles de CSS, por debajo del cual la interfaz deja de caber.
+ *
+ * No es el `minWidth` de la ventana (940): es el ancho al que esto se sigue
+ * viendo BIEN, medido a ojo el 2026-09-05. A 1067 el panel derecho está entero;
+ * a 948 los títulos de la cola se quedan en "F." y "K.". El mínimo de la
+ * ventana solo garantiza que no se rompa, no que se pueda leer.
+ */
+const ANCHO_MINIMO = 1060;
+
+/**
+ * La escala que de verdad se puede aplicar con la ventana que hay ahora.
+ *
+ * Agrandar es dividir el espacio disponible: al 135 % en una ventana de 1280 px
+ * quedan 948 px de interfaz, y ahí ya no cabe. Sin este tope, elegir el paso
+ * grande en una ventana pequeña no agranda la letra, la deja ilegible por otro
+ * motivo. Se recorta en silencio y se recalcula al redimensionar, así que
+ * maximizar da el tamaño completo y volver a la ventana pequeña lo devuelve.
+ *
+ * Nunca baja del 100 %: encoger la interfaz no lo ha pedido nadie.
+ */
+function escalaQueCabe(pct: number): number {
+  const cabe = window.innerWidth / ANCHO_MINIMO;
+  return Math.max(1, Math.min(pct / 100, cabe));
+}
+
+function pintarEscala() {
+  // `zoom` y no `transform: scale()`: el segundo deja el hueco del tamaño
+  // original y habría que recalcular el alto de la ventana a mano.
+  const valor = String(escalaQueCabe(escalaUi()));
+  // Solo si cambia: escribirlo dispara un relayout, y esto corre en cada
+  // píxel de un arrastre del borde de la ventana.
+  if (document.documentElement.style.zoom !== valor) {
+    document.documentElement.style.zoom = valor;
+  }
+}
+
+export function aplicarEscala(pct: number) {
+  setEscalaSignal(pct);
+  pintarEscala();
+  try {
+    localStorage.setItem(ESCALA_KEY, String(pct));
+  } catch {
+    // Sin persistencia se pierde entre sesiones; la sesión actual funciona.
+  }
+}
+
 export async function refreshPlaylists() {
   try {
     setPlaylists(await api.playlists());
@@ -645,6 +737,10 @@ function adoptQueue(s: PlaybackState): PlaybackState {
 }
 
 export function initStore() {
+  // Antes que nada: si no, la primera pintura sale al tamaño de fábrica y se
+  // ve el salto.
+  aplicarEscala(escalaUi());
+  window.addEventListener("resize", pintarEscala);
   vigilarConexion();
   instalarAtajos();
   instalarBotonesDelRaton();
