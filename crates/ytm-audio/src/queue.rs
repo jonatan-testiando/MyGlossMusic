@@ -357,6 +357,17 @@ mod tests {
     }
 
     #[test]
+    fn peek_ahead_puede_devolver_la_misma_pista_dos_veces() {
+        // Una playlist puede tener la misma cancion repetida, y la cola no lo
+        // impide. Quien precarga TIENE que contar con esto: lanzar dos
+        // descargas sobre el mismo archivo lo corrompe. Ver `prefetch_ahead`.
+        let mut q = Queue::default();
+        q.set_items(vec![track("a"), track("dup"), track("dup")], 0);
+        let v: Vec<&str> = q.peek_ahead(2).iter().map(|t| t.video_id.as_str()).collect();
+        assert_eq!(v, vec!["dup", "dup"]);
+    }
+
+    #[test]
     fn peek_ahead_se_para_al_final_sin_repeticion() {
         let mut q = queue_of(3);
         q.jump_to(2);

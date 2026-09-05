@@ -442,7 +442,21 @@ async fn preparar(
             Ok(prep)
         }
         Err(e) => {
-            tracing::warn!(error = %e, "el proveedor fallo; se usa InnerTube");
+            // Este respaldo NO se quita, aunque sirva pistas capadas: es el
+            // modo degradado con el que la aplicacion funciona sin yt-dlp, y
+            // esta documentado como tal ("la reproduccion queda capada a ~48 s
+            // por pista", en Ajustes > Acerca de). Sonar 65 s es mejor que no
+            // sonar.
+            //
+            // Lo que si hace falta es que se sepa POR QUE. Con un proveedor que
+            // funciona, caer aqui es una anomalia, y antes se anunciaba con un
+            // aviso sin id de video y sin decir la consecuencia: cuando la
+            // cancion se cortaba al minuto no habia forma de atarlo a esto.
+            tracing::warn!(
+                video_id,
+                error = %e,
+                "el proveedor fallo; se tira de la URL de InnerTube, que puede                  cortarse a ~65 s si la pista tiene licencia"
+            );
             let r = resuelto.context("sin proveedor de audio y sin URL de InnerTube")?;
             let mut prep = prepare_stream(http, video_id, &r.audio)?;
             prep.resolved = Some(r);
@@ -831,14 +845,24 @@ impl Inner {
     /// aleatorio arrancaba en frio, con los segundos completos de espera.
     fn prefetch_ahead(&self) {
         let actual = self.queue.current().map(|t| t.video_id.clone());
-        let siguientes: Vec<String> = self
-            .queue
-            .peek_ahead(PRECARGA)
-            .into_iter()
-            .map(|t| t.video_id.clone())
+        let mut siguientes: Vec<String> = Vec::with_capacity(PRECARGA);
+        for t in self.queue.peek_ahead(PRECARGA) {
             // Repeat::One: la siguiente es la que ya esta sonando.
-            .filter(|id| Some(id) != actual.as_ref())
-            .collect();
+            if Some(&t.video_id) == actual.as_ref() {
+                continue;
+            }
+            // SIN REPETIDOS. Una playlist puede tener la misma cancion dos
+            // veces seguidas, y entonces `peek_ahead` devuelve el mismo id en
+            // las dos posiciones. El filtro de mas abajo mira el registro ANTES
+            // de insertar nada, asi que los dos pasaban y se lanzaban DOS
+            // yt-dlp sobre el mismo archivo: el segundo borra los restos del
+            // primero, se encuentra el archivo abierto, y acaba saliendo con
+            // codigo 0 sin descargar nada. Visto en vivo el 2026-09-05.
+            if siguientes.contains(&t.video_id) {
+                continue;
+            }
+            siguientes.push(t.video_id.clone());
+        }
 
         let pendientes: Vec<String> = {
             let mut reg = self.prepared.lock().unwrap();

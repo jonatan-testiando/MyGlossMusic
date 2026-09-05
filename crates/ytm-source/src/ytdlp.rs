@@ -220,7 +220,7 @@ impl YtDlp {
         .context("yt-dlp tardo demasiado en resolver la pista")?;
 
         let Some(line) = line else {
-            // Ha muerto antes de imprimir: recoge el motivo.
+            // Ha terminado sin imprimir. Recoge como.
             let status = child.wait().await.ok();
             let mut tail = String::new();
             if let Some(mut err) = child.stderr.take() {
@@ -228,6 +228,37 @@ impl YtDlp {
                 let _ = err.read_to_string(&mut tail).await;
             }
             let tail: String = tail.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
+
+            // Terminar BIEN sin imprimir no es un fallo: es lo que hace yt-dlp
+            // cuando decide que el archivo ya estaba y no hay nada que bajar
+            // —`before_dl` solo dispara si va a descargar—. Pasa cuando
+            // `purge_partial` no pudo borrar los restos porque otro proceso
+            // tenia el archivo abierto. Visto en vivo el 2026-09-05: se trataba
+            // como fallo de extraccion y se caia al respaldo de InnerTube, que
+            // sirve la pista capada a 1 MiB, o sea 65 s y corte.
+            if status.is_some_and(|s| s.success()) {
+                // Puede que mientras tanto el otro proceso haya terminado y
+                // dejado su marcador.
+                if let Some(hit) = cached(video_id, dir) {
+                    tracing::debug!(video_id, "yt-dlp: ya estaba en cache");
+                    return Ok(hit);
+                }
+                if let Some(info) = del_disco(video_id, dir) {
+                    tracing::info!(
+                        video_id,
+                        path = ?info.path,
+                        "yt-dlp no tenia nada que bajar; se usa el archivo que ya estaba"
+                    );
+                    // `child: None` porque no hay proceso al que esperar, y
+                    // `raw` vacio A PROPOSITO: sin la linea del `--print` no se
+                    // escribe marcador de completitud, y sin marcador la
+                    // proxima vez se vuelve a preguntar. Es deliberado — este
+                    // archivo puede estar a medias, y darlo por bueno para
+                    // siempre dejaria la cancion cortada en cada escucha.
+                    return Ok(Download { info, child: None, raw: String::new() });
+                }
+            }
+
             return Err(SinPista {
                 motivo: clasificar(&tail),
                 detalle: format!("yt-dlp no resolvio la pista ({status:?}): {tail}"),
@@ -375,6 +406,43 @@ fn cached(video_id: &str, dir: &Path) -> Option<Download> {
             info,
             child: None,
             raw,
+        });
+    }
+    None
+}
+
+/// El archivo de audio que ya hay en disco para esta pista, sin marcador.
+///
+/// Solo se mira cuando yt-dlp ha dicho que no habia nada que descargar. Los
+/// metadatos van vacios porque el archivo no los lleva: el titulo, el autor y
+/// la duracion los pone InnerTube, que en el motor se resuelve en paralelo.
+fn del_disco(video_id: &str, dir: &Path) -> Option<Info> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with(&format!("{video_id}.")) || name.ends_with(".ok") {
+            continue;
+        }
+        let meta = entry.metadata().ok()?;
+        if meta.len() == 0 {
+            continue;
+        }
+        let path = entry.path();
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_lowercase)
+            .unwrap_or_else(|| "m4a".into());
+        return Some(Info {
+            path,
+            size: Some(meta.len()),
+            ext,
+            acodec: None,
+            title: None,
+            author: None,
+            duration_ms: None,
+            thumbnail: None,
         });
     }
     None
