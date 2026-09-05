@@ -228,7 +228,11 @@ impl YtDlp {
                 let _ = err.read_to_string(&mut tail).await;
             }
             let tail: String = tail.lines().rev().take(3).collect::<Vec<_>>().join(" | ");
-            bail!("yt-dlp no resolvio la pista ({status:?}): {tail}");
+            return Err(SinPista {
+                motivo: clasificar(&tail),
+                detalle: format!("yt-dlp no resolvio la pista ({status:?}): {tail}"),
+            }
+            .into());
         };
 
         // El resto de stdout no interesa, pero hay que drenarlo para que el
@@ -242,6 +246,73 @@ impl YtDlp {
             child: Some(child),
             raw: line,
         })
+    }
+}
+
+/// Por que yt-dlp no pudo con una pista.
+///
+/// Existe para que quien llama pueda distinguir "hoy no se ha podido" de "esto
+/// no se va a poder nunca". Sin esa distincion, la aplicacion caia al acunador
+/// tambien cuando el video no existe, y ahi el acunador agota sus 25 segundos
+/// de margen para descubrir lo mismo que yt-dlp ya sabia en dos.
+#[derive(Debug, Clone)]
+pub struct SinPista {
+    pub motivo: Motivo,
+    pub detalle: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Motivo {
+    /// La pista no existe, es privada, se retiro, o esta bloqueada donde estas.
+    /// Ningun otro extractor lo va a arreglar: no hay nada que extraer.
+    NoDisponible,
+    /// Fallo la extraccion en si: red, un cambio de YouTube, el binario viejo.
+    /// Aqui probar por otra via si tiene sentido.
+    Extraccion,
+}
+
+impl std::fmt::Display for SinPista {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.detalle)
+    }
+}
+
+impl std::error::Error for SinPista {}
+
+/// Lo que yt-dlp escribe en stderr cuando la pista sencillamente no esta.
+///
+/// Es DATO, no logica: yt-dlp cambia sus mensajes de vez en cuando y la lista
+/// se amplia sin tocar nada mas. Se compara en minusculas y por subcadena, asi
+/// que basta con el trozo estable de cada mensaje.
+///
+/// Deliberadamente NO estan aqui los errores de red, de firma ni de formato:
+/// esos si merecen el segundo intento por otra via.
+const NO_DISPONIBLE: &[&str] = &[
+    "video unavailable",
+    "private video",
+    "has been removed",
+    "account associated with this video has been terminated",
+    // Cubre las dos redacciones: "is not available in your country" y "has not
+    // made this video available in your country".
+    "available in your country",
+    "blocked it in your country",
+    "members-only",
+    "join this channel",
+    "removed by the uploader",
+    "no longer available",
+    "this video has been removed",
+];
+
+/// Decide si el fallo es definitivo mirando lo que dijo yt-dlp.
+///
+/// Ante la duda, [`Motivo::Extraccion`]: equivocarse hacia ese lado cuesta un
+/// intento de mas; hacia el otro, dejar sin sonar algo que si se podia.
+fn clasificar(tail: &str) -> Motivo {
+    let t = tail.to_lowercase();
+    if NO_DISPONIBLE.iter().any(|m| t.contains(m)) {
+        Motivo::NoDisponible
+    } else {
+        Motivo::Extraccion
     }
 }
 
@@ -319,6 +390,35 @@ fn purge_partial(video_id: &str, dir: &Path) {
         let name = name.to_string_lossy();
         if name.starts_with(&format!("{video_id}.")) {
             let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reconoce_lo_que_no_se_puede_arreglar() {
+        for tail in [
+            "ERROR: [youtube] GiW1e6CCLas: Video unavailable",
+            "ERROR: [youtube] abc: Private video. Sign in if you've been granted access",
+            "ERROR: [youtube] abc: This video has been removed by the uploader",
+            "ERROR: [youtube] abc: The uploader has not made this video available in your country",
+        ] {
+            assert_eq!(clasificar(tail), Motivo::NoDisponible, "{tail}");
+        }
+    }
+
+    #[test]
+    fn un_fallo_de_red_merece_un_segundo_intento() {
+        for tail in [
+            "ERROR: unable to download video data: HTTP Error 403: Forbidden",
+            "ERROR: [youtube] abc: Unable to extract player response",
+            "ERROR: unable to open for writing",
+            "",
+        ] {
+            assert_eq!(clasificar(tail), Motivo::Extraccion, "{tail}");
         }
     }
 }

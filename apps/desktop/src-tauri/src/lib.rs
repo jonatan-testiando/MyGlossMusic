@@ -757,14 +757,13 @@ pub fn run() {
             }
             let ytdlp_for_state = ytdlp.clone();
             let handle_for_mint = app.handle().clone();
-            let provider: ytm_audio::SourceProvider =
-                Arc::new(move |video_id: String, dir: std::path::PathBuf| {
+            let provider: ytm_audio::SourceProvider = Arc::new(
+                move |video_id: String, dir: std::path::PathBuf, urgencia: ytm_audio::Urgencia| {
                     let h = handle_for_mint.clone();
                     let y = ytdlp.clone();
                     Box::pin(async move {
-                        tracing::info!(video_id = %video_id, "source_provider: resolviendo fuente de audio...");
+                        tracing::info!(video_id = %video_id, ?urgencia, "resolviendo fuente de audio");
                         if let Some(y) = y {
-                            tracing::info!(video_id = %video_id, "Iniciando descarga de pista con yt-dlp...");
                             match y.download(&video_id, &dir).await {
                                 Ok(d) => {
                                     let info = d.info.clone();
@@ -772,8 +771,7 @@ pub fn run() {
                                     tracing::info!(
                                         video_id = %video_id,
                                         title = ?info.title,
-                                        path = ?info.path,
-                                        "yt-dlp resolvio con exito la pista"
+                                        "yt-dlp resolvio la pista"
                                     );
                                     return Ok(ytm_audio::Provided::External {
                                         path: info.path,
@@ -787,16 +785,53 @@ pub fn run() {
                                     });
                                 }
                                 Err(e) => {
-                                    tracing::warn!(error = %e, "yt-dlp fallo; se intenta el acunador")
+                                    // Dos casos en los que el acunador solo
+                                    // sirve para perder sus 25 s de margen.
+                                    //
+                                    // 1. La pista no existe, es privada o esta
+                                    //    bloqueada. No hay nada que extraer, y
+                                    //    el acunador tarda 25 s en descubrir lo
+                                    //    mismo que yt-dlp ya sabia en dos.
+                                    //    Medido el 2026-09-05 con un
+                                    //    `Video unavailable` que costo 27 s en
+                                    //    vez de 2.
+                                    if matches!(
+                                        e.downcast_ref::<ytm_source::ytdlp::SinPista>(),
+                                        Some(f) if f.motivo == ytm_source::ytdlp::Motivo::NoDisponible
+                                    ) {
+                                        tracing::info!(
+                                            video_id = %video_id,
+                                            error = %e,
+                                            "la pista no esta disponible; no se intenta el acunador"
+                                        );
+                                        return Err(e);
+                                    }
+                                    // 2. Es una precarga. Abrir un webview
+                                    //    oculto por una cancion que puede que no
+                                    //    suene nunca es desproporcionado, y
+                                    //    ademas compite con la que SI esta
+                                    //    sonando. Si luego se pulsa esa pista,
+                                    //    llegara por el camino de `Ahora` y
+                                    //    entonces si se acuna.
+                                    if urgencia == ytm_audio::Urgencia::Precarga {
+                                        tracing::debug!(
+                                            video_id = %video_id,
+                                            error = %e,
+                                            "yt-dlp fallo en una precarga; no se acuna"
+                                        );
+                                        return Err(e);
+                                    }
+                                    tracing::warn!(error = %e, "yt-dlp fallo; se intenta el acunador");
                                 }
                             }
                         }
-                        tracing::warn!(video_id = %video_id, "Llamando a minter::mint (posible ventana oculta)...");
+                        tracing::warn!(video_id = %video_id, "acunando la URL en un webview oculto");
                         let url = minter::mint(&h, &video_id).await?;
-                        tracing::info!(video_id = %video_id, "minter::mint finalizo con exito");
+                        tracing::info!(video_id = %video_id, "URL acunada");
                         Ok(ytm_audio::Provided::Url { url, size: None, mime: None })
                     })
-                });
+                },
+            );
 
             let engine = Engine::start(Some(provider))?;
             let innertube = InnerTube::new()?;

@@ -47,11 +47,26 @@ pub enum Provided {
     },
 }
 
+/// Para que se pide la fuente de una pista.
+///
+/// El anfitrion puede querer ser mas conservador con una precarga que con lo
+/// que el usuario esta esperando. En esta aplicacion lo es: el acunador abre un
+/// webview oculto y tarda hasta 25 s, y eso es aceptable por una cancion que
+/// alguien acaba de pulsar, pero no por una que a lo mejor no suena nunca.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Urgencia {
+    /// Alguien esta mirando la pantalla esperando a que suene.
+    Ahora,
+    /// Se adelanta trabajo para luego, sin nadie esperando.
+    Precarga,
+}
+
 /// Proveedor de fuente de audio. Lo inyecta el anfitrion (la app Tauri): acunar
 /// una URL exige un webview y lanzar yt-dlp exige saber donde esta, y este crate
-/// no debe saber nada de eso. Recibe el id del video y el directorio de cache.
+/// no debe saber nada de eso. Recibe el id del video, el directorio de cache y
+/// para que se le esta pidiendo.
 pub type SourceProvider = Arc<
-    dyn Fn(String, PathBuf) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Provided>> + Send>>
+    dyn Fn(String, PathBuf, Urgencia) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Provided>> + Send>>
         + Send
         + Sync,
 >;
@@ -333,8 +348,9 @@ async fn prepare_provider(
     provider: &SourceProvider,
     http: reqwest::Client,
     video_id: &str,
+    urgencia: Urgencia,
 ) -> Result<Prepared> {
-    match provider(video_id.to_string(), cache::cache_dir()).await? {
+    match provider(video_id.to_string(), cache::cache_dir(), urgencia).await? {
         Provided::Url { url, size, mime } => {
             let itag = param(&url, "itag").and_then(|v| v.parse().ok()).unwrap_or(0);
             let mime = mime.or_else(|| param(&url, "mime").map(|m| m.replace("%2F", "/")));
@@ -388,6 +404,7 @@ async fn preparar(
     innertube: &InnerTube,
     http: reqwest::Client,
     video_id: &str,
+    urgencia: Urgencia,
 ) -> Result<Prepared> {
     let Some(provider) = provider else {
         // Sin proveedor, InnerTube es la unica fuente y no hay nada que
@@ -400,7 +417,7 @@ async fn preparar(
 
     let (resuelto, del_proveedor) = tokio::join!(
         ytm_source::resolve(innertube, video_id),
-        prepare_provider(provider, http.clone(), video_id),
+        prepare_provider(provider, http.clone(), video_id, urgencia),
     );
 
     let resuelto = match resuelto {
@@ -640,6 +657,13 @@ impl Inner {
             return Ok(());
         };
 
+        // Cronometro del arranque. Es la unica cifra que le importa al usuario
+        // —cuanto tarda en sonar— y sin medirla en la aplicacion de verdad solo
+        // quedan las piezas sueltas medidas por separado. Se distingue el
+        // acierto de precarga del arranque en frio porque son dos numeros
+        // completamente distintos y mezclarlos no dice nada.
+        let cronometro = std::time::Instant::now();
+
         self.error = None;
         self.loading = true;
         self.partial_warned = false;
@@ -663,6 +687,7 @@ impl Inner {
         // precarga guarda tambien la respuesta de InnerTube, este camino no
         // toca la red: es el cambio de cancion instantaneo.
         let already = self.prepared.lock().unwrap().listas.remove(&track.video_id);
+        let precargada = already.as_ref().is_some_and(|p| p.cache.error().is_none());
         let prepared = match already {
             Some(p) if p.cache.error().is_none() => p,
             _ => preparar(
@@ -670,6 +695,7 @@ impl Inner {
                 &self.innertube,
                 self.http.clone(),
                 &track.video_id,
+                Urgencia::Ahora,
             )
             .await
             .with_context(|| format!("no se pudo resolver {}", track.video_id))?,
@@ -729,6 +755,13 @@ impl Inner {
         self.current_cache = Some(prepared.cache);
         self.loading = false;
         self.armed.store(true, Ordering::Release);
+
+        tracing::info!(
+            video_id = %track.video_id,
+            ms = cronometro.elapsed().as_millis() as u64,
+            precargada,
+            "arranque"
+        );
 
         self.prefetch_ahead();
         self.podar_cache();
@@ -827,7 +860,7 @@ impl Inner {
             let registro = Arc::clone(&self.prepared);
             let suya = id.clone();
             let tarea = tokio::spawn(async move {
-                match preparar(provider.as_ref(), &it, http, &suya).await {
+                match preparar(provider.as_ref(), &it, http, &suya, Urgencia::Precarga).await {
                     Ok(p) => {
                         registro.lock().unwrap().listas.insert(suya, p);
                     }
