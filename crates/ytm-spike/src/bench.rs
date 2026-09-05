@@ -40,6 +40,26 @@ const CHUNK: u64 = 1_048_576; // 1 MiB
 /// Es la prueba que decide toda la arquitectura: si funciona, hace falta acunar
 /// el token en un webview oculto; si no, no hay camino sin reimplementar
 /// BotGuard entero.
+///
+/// # RESPUESTA: no funciona (medido el 2026-09-05)
+///
+/// Se acuno un par real (`visitorData` + `pot`) en una sesion anonima de
+/// music.youtube.com y se probo sobre dos pistas de YouTube Music que SIN
+/// atestacion cortan a 1 MiB (`clientlimits` las da `CORTADO`, 1024 de 3807 KB
+/// y de 4584 KB). Con la atestacion cortan exactamente igual, y la columna
+/// `POT` sale `no` en todos los clientes: YouTube ni siquiera adjunta el token
+/// a las URLs que devuelve, es decir, lo ignora.
+///
+/// La misma pista pedida con la URL ENTERA formada por el navegador se
+/// descarga completa (4 028 192 de 4 028 192 bytes). Asi que el problema no es
+/// que el token no sirva, sino que **la autorizacion no es un credencial
+/// portable**: `sig`, `lsig`, `ns` y `pot` se acunan juntos para un cliente y
+/// una sesion concretos, y no se pueden trasplantar a la URL de otro cliente.
+///
+/// Conclusion practica: no hay atajo de "un token por sesion y ya resolvemos
+/// nativo". Lo unico que entrega pistas enteras sigue siendo traer la URL
+/// completa de un navegador (el acunador) o delegar en yt-dlp. Ver [`graft`],
+/// que prueba el otro angulo y falla igual.
 /// Descarga entera una URL de googlevideo YA FORMADA (por ejemplo, capturada de
 /// un navegador real). Sirve para comprobar si una URL con `pot` y firma valida
 /// se puede consumir desde un cliente HTTP normal.
@@ -55,6 +75,13 @@ const CHUNK: u64 = 1_048_576; // 1 MiB
 /// googlevideo lo valida por separado, se puede acunar un token una sola vez y
 /// reutilizarlo con las URLs de `android`, que si sirven AAC (itag 140) y nos
 /// ahorran tener que decodificar Opus.
+///
+/// # RESPUESTA: no basta (medido el 2026-09-05)
+///
+/// Con un `pot` acunado de verdad en el navegador, `android` e `ios` cortan en
+/// el mismo sitio con el token pegado y sin el: 1024 KB de 3807. Que no este
+/// en `sparams` no significa que se valide por separado; significa que
+/// googlevideo lo comprueba contra la sesion que lo emitio. Ver [`attest`].
 pub async fn graft(video_id: &str, visitor_data: &str, po_token: &str) -> Result<()> {
     let it = InnerTube::new()?;
     let client = reqwest::Client::new();

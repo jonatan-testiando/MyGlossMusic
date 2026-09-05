@@ -166,6 +166,17 @@ Lo que de verdad diferencia el proyecto.
    sobre el mismo archivo, y un corte de descarga ya no mata lo descargado.
    Descartada la opción A (protocolo en vivo de YouTube): medido que la
    autorización es posicional y ligada a la reproducción; ver README.
+
+   **Cerrado el 2026-09-05: no hay atajo por poToken.** Se acuñó un par real
+   (`visitorData` + `pot`) en una sesión anónima del navegador y se probaron los
+   dos ángulos sobre pistas que sin él cortan a 1 MiB. Mandarlo en el `player`
+   (`ytm-spike attest`): YouTube lo ignora — ni siquiera adjunta `pot` a las
+   URLs que devuelve — y la descarga corta igual. Pegarlo a la URL de un cliente
+   móvil (`ytm-spike graft`): idéntico, 1024 KB de 3807. La misma pista con la
+   URL entera formada por el navegador baja completa. La autorización no es un
+   credencial portable: `sig`, `lsig`, `ns` y `pot` se acuñan juntos para un
+   cliente y una sesión, y no se trasplantan. yt-dlp se queda en el camino
+   crítico; el detalle está en los comentarios de `ytm-spike/src/bench.rs`.
 1. **CI que detecte roturas de YouTube** antes que el usuario.
 2. **Normalización de volumen** con `loudness_db`, que ya se extrae.
 3. **Renovación de URL caducada** (~6 h) sin cortar la reproducción.
