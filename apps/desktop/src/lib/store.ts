@@ -21,6 +21,8 @@ import {
   type SearchChip,
   type SearchResult,
   type ShelfItem,
+  type UpdateProgress,
+  type UpdateReady,
 } from "./api";
 
 const EMPTY_STATE: PlaybackState = {
@@ -139,6 +141,26 @@ export async function refreshExtractor() {
     setExtractor(null);
   }
 }
+
+/* ---------------------------------------------------------- Actualizacion */
+
+/**
+ * Version nueva ya descargada y esperando a que la instales, si la hay.
+ *
+ * Vive en el store y no dentro de Ajustes porque se pinta en dos sitios a la
+ * vez —la barra lateral y Ajustes— y son dos componentes que no se ven entre
+ * ellos. Con el estado en cada uno, abrir Ajustes despues de instalar dejaba
+ * los dos diciendo cosas distintas.
+ */
+export const [updateReady, setUpdateReady] = createSignal<UpdateReady | null>(null);
+export const [updateProgress, setUpdateProgress] = createSignal<UpdateProgress | null>(null);
+/**
+ * Se ha pulsado instalar y la aplicacion esta a punto de cerrarse.
+ *
+ * Existe para poder tapar la pantalla durante el transito: el cierre es tan
+ * rapido que sin un velo el reinicio parece que la aplicacion se ha caido.
+ */
+export const [instalandoUpdate, setInstalandoUpdate] = createSignal(false);
 
 /**
  * Fondo animado encendido o apagado.
@@ -660,6 +682,16 @@ export function initStore() {
     lastSync = { at: performance.now(), ms: s.positionMs };
     setLocalPos(s.positionMs);
   });
+
+  // Actualizacion. Se pregunta ADEMAS de escuchar: Rust espera 20 s antes de
+  // mirar, pero si ya la habia descargado —o si esta ventana se monto tarde—
+  // el evento ya paso y solo queda preguntar.
+  api.updatePending().then(setUpdateReady).catch(() => {});
+  api.onUpdateReady((u) => {
+    setUpdateReady(u);
+    setUpdateProgress(null);
+  });
+  api.onUpdateProgress(setUpdateProgress);
 
   let lastTick = 0;
   const tick = (now: number) => {

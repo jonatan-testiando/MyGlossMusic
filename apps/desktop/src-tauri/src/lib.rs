@@ -3,6 +3,7 @@
 //! La interfaz nunca habla con YouTube: solo invoca estos comandos y escucha el
 //! evento `playback`. Toda la logica fragil queda del lado de Rust.
 
+mod actualizacion;
 mod db;
 mod discord;
 mod lyrics;
@@ -711,6 +712,7 @@ pub fn run() {
 
     thumbs::register(tauri::Builder::default())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .on_window_event(move |window, event| {
             match event {
                 tauri::WindowEvent::Resized(size) => {
@@ -1040,6 +1042,11 @@ pub fn run() {
                 }
             });
 
+            // La actualizacion se comprueba y se descarga sola, con margen.
+            // Ver `actualizacion.rs`.
+            app.manage(actualizacion::EstadoActualizacion::default());
+            actualizacion::comprobar_en_segundo_plano(app.handle().clone());
+
             app.manage(App {
                 engine,
                 innertube,
@@ -1099,6 +1106,9 @@ pub fn run() {
             window_minimize,
             window_toggle_maximize,
             window_close,
+            actualizacion::update_pending,
+            actualizacion::update_check_now,
+            actualizacion::update_install,
         ])
         .run(tauri::generate_context!())
         .expect("error al arrancar la aplicacion");

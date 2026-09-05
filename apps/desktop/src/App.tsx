@@ -19,6 +19,7 @@ import {
 import { SettingsDialog } from "./components/Settings";
 import { Ambient } from "./components/Ambient";
 import { Toasts } from "./components/Toasts";
+import { VeloDeInstalacion } from "./components/Actualizacion";
 import {
   initStore,
   palette,
@@ -213,6 +214,10 @@ export default function App() {
       {/* Encima de todo: un aviso que quedara debajo de un diálogo no serviría
           de nada, y es justo desde un diálogo desde donde salen la mitad. */}
       <Toasts />
+
+      {/* Y por encima incluso de los avisos: mientras se instala no hay nada
+          más que hacer en la aplicación. */}
+      <VeloDeInstalacion />
     </div>
   );
 }

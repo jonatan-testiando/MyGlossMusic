@@ -60,6 +60,7 @@ import {
 } from "../lib/store";
 import * as I from "./Icons";
 import { TrackMenu } from "./TrackMenu";
+import { PildoraActualizacion } from "./Actualizacion";
 
 /* ---------------------------------------------------------------- Titlebar */
 
@@ -393,6 +394,7 @@ export function Sidebar() {
         </div>
 
         <div class="mt-auto space-y-1 px-1 pb-1">
+          <PildoraActualizacion />
           <button
             class="flex w-full items-center gap-1.5 rounded-xl px-2.5 py-2 text-left text-xs font-medium text-white/60 transition-colors hover:bg-white/10 hover:text-white/90"
             onClick={() => {
@@ -403,6 +405,14 @@ export function Sidebar() {
             <span>Diagnóstico</span>
           </button>
           <div class="px-2.5 text-[11px] leading-relaxed text-white/30">Modo anónimo</div>
+        </div>
+      </Show>
+
+      {/* Con el rail cerrado no hay bloque inferior donde meterla, asi que la
+          version compacta va aparte. `mt-auto` la baja igual. */}
+      <Show when={collapsed()}>
+        <div class="mt-auto w-full pb-1">
+          <PildoraActualizacion compacta />
         </div>
       </Show>
     </nav>

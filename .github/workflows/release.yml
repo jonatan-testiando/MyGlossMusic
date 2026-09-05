@@ -7,6 +7,30 @@
 #
 # Se lanza al empujar una etiqueta `v*` (por ejemplo `v0.1.0`) o a mano desde la
 # pestania Actions.
+#
+# # Antes de la PRIMERA release con actualizacion automatica
+#
+# Hacen falta dos secretos del repositorio (Settings -> Secrets and variables ->
+# Actions). Sin ellos el resto sigue funcionando, pero no se generan los `.sig`
+# y la aplicacion instalada rechazara cualquier actualizacion:
+#
+#   TAURI_SIGNING_PRIVATE_KEY           el CONTENIDO de la clave privada
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  su contrasenia (vacia si no tiene)
+#
+# La clave se genera una sola vez, con `npm run tauri signer generate -- -w
+# <ruta>`, y NO va al repositorio. Su mitad publica ya esta en
+# `tauri.conf.json` como `pubkey`: es la que lleva la aplicacion dentro para
+# comprobar la firma. Si se pierde la privada hay que generar otra y publicar
+# una version nueva a mano, porque las instalaciones antiguas solo aceptan
+# paquetes firmados con la que ya conocen.
+#
+# # Al publicar
+#
+# La release se crea como BORRADOR a proposito: nadie actualiza hasta que la
+# publiques. Antes de darle a publicar, abre el `latest.json` del borrador y
+# comprueba que estan las cuatro plataformas. Cada trabajo de la matriz le anade
+# la suya leyendo el que ya subieron los demas, y si dos terminan a la vez uno
+# puede pisar al otro.
 name: release
 
 on:
@@ -120,12 +144,38 @@ jobs:
       - name: Comprobar TypeScript
         run: npx --prefix apps/desktop tsc --noEmit -p apps/desktop/tsconfig.json
 
+      # La firma del actualizador.
+      #
+      # Sin estas dos variables el bundler NO genera los `.sig`, y sin `.sig` la
+      # aplicacion instalada rechaza el paquete: el plugin comprueba la firma
+      # contra la clave publica que lleva dentro (`pubkey` en `tauri.conf.json`)
+      # antes de instalar nada. Es lo unico que impide que un endpoint
+      # secuestrado te instale lo que quiera.
+      #
+      # `TAURI_SIGNING_PRIVATE_KEY` es el CONTENIDO del archivo de clave
+      # privada, no su ruta. Si la clave se genero sin contrasenia, el secreto
+      # de la contrasenia se deja vacio, pero tiene que existir.
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
           releaseName: MyGlossMusic ${{ github.ref_name }}
           releaseDraft: true
           args: ${{ matrix.args }}
+          # El `latest.json` que lee la aplicacion instalada para saber si hay
+          # version nueva. Cada trabajo de la matriz lee el que ya subieron los
+          # demas y le anade SU plataforma, asi que el archivo final las junta
+          # las cuatro. Antes de publicar el borrador conviene abrirlo y
+          # comprobarlo: si dos trabajos terminan en el mismo segundo pueden
+          # leer la misma version vieja y uno pisar al otro.
+          includeUpdaterJson: true
+          # En Windows se empaquetan `.msi` y `.exe`. Para ACTUALIZAR hay que
+          # apuntar al NSIS: el `.msi` se instala en Archivos de programa y pide
+          # permisos de administrador, que es justo la ventana del sistema que
+          # no queremos ver. El NSIS se instala para el usuario actual y corre en
+          # silencio.
+          updaterJsonPreferNsis: true

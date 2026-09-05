@@ -519,4 +519,13 @@ export const mockApi = {
     cb({ ...state });
     return () => {};
   },
+
+  // Fuera de Tauri no hay nada que actualizar: la aplicacion se esta sirviendo
+  // desde Vite. Se responde "al dia" en vez de dejar los metodos sin definir,
+  // que es lo que reventaria el componente que los llama.
+  updatePending: async () => null,
+  updateCheckNow: async () => null,
+  updateInstall: async () => {},
+  onUpdateReady: async () => () => {},
+  onUpdateProgress: async () => () => {},
 };

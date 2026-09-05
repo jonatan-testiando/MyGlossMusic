@@ -276,3 +276,14 @@ export const Settings = svg(() =>
   </>,
   false,
 );
+
+/** Flecha hacia arriba dentro de un circulo: hay una version nueva. */
+export const Update = svg(
+  () => (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 16V8M8.5 11.5 12 8l3.5 3.5" />
+    </>
+  ),
+  false,
+);

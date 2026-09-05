@@ -196,6 +196,17 @@ export interface ClientHealth {
   best: string | null;
 }
 
+/** Una version nueva ya descargada y verificada, esperando a que la instales. */
+export interface UpdateReady {
+  version: string;
+  notes: string | null;
+}
+
+export interface UpdateProgress {
+  percent: number;
+  version: string;
+}
+
 const realApi = {
   search: (query: string, params?: string) =>
     invoke<SearchPage>("search", { query, params }),
@@ -265,6 +276,19 @@ const realApi = {
     listen<PlaybackState>("playback", (e) => cb(e.payload)),
   /** Algo guardado ha cambiado por su cuenta: historial, favoritos, playlists. */
   onLibrary: (cb: () => void) => listen("biblioteca", () => cb()),
+
+  // Actualizacion. La descarga la arranca Rust solo poco despues de abrir (ver
+  // `src-tauri/src/actualizacion.rs`): cuando llega `actualizacion-lista` el
+  // paquete ya esta bajado y con la firma verificada, asi que instalar son
+  // segundos y no la espera de la descarga entera.
+  updatePending: () => invoke<UpdateReady | null>("update_pending"),
+  updateCheckNow: () => invoke<UpdateReady | null>("update_check_now"),
+  /** No devuelve nunca en Windows: el instalador toma el relevo y mata el proceso. */
+  updateInstall: () => invoke<void>("update_install"),
+  onUpdateReady: (cb: (u: UpdateReady) => void) =>
+    listen<UpdateReady>("actualizacion-lista", (e) => cb(e.payload)),
+  onUpdateProgress: (cb: (p: UpdateProgress) => void) =>
+    listen<UpdateProgress>("actualizacion-progreso", (e) => cb(e.payload)),
 };
 
 /**

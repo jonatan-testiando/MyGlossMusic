@@ -55,6 +55,17 @@ Puedes descargar la última versión compilada para tu sistema operativo desde l
 * **macOS**: Imagen de disco `.dmg` (versiones nativas para Apple Silicon M1/M2/M3/M4 y procesadores Intel).
 * **Linux**: Paquetes `.AppImage` y `.deb`.
 
+Solo hace falta descargar una vez. A partir de ahí la aplicación se mantiene
+sola: comprueba si hay versión nueva poco después de abrir, se la descarga en
+segundo plano sin interrumpir la música y avisa con un botón en la barra
+lateral. Al pulsarlo se instala en unos segundos y vuelve sola, sin ventanas
+del instalador ni permisos de administrador. Instalar lo decides tú: nunca se
+actualiza sin que lo pidas. También hay un botón de comprobar a mano en
+**Ajustes → Acerca de**.
+
+Cada paquete va firmado, y la aplicación instalada verifica esa firma contra
+una clave pública que lleva dentro antes de instalar nada.
+
 ---
 
 ## Compilación desde Código Fuente

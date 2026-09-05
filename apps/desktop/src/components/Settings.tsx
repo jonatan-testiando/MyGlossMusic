@@ -6,7 +6,12 @@ import {
   setSettingsOpen,
   extractor,
   refreshExtractor,
+  setInstalandoUpdate,
+  setUpdateReady,
+  updateProgress,
+  updateReady,
 } from "../lib/store";
+import { avisarError, motivo } from "../lib/toast";
 import * as I from "./Icons";
 
 /**
@@ -81,6 +86,81 @@ function Fila(p: { titulo: string; nota?: string; children?: any }) {
       </div>
       <div class="shrink-0">{p.children}</div>
     </div>
+  );
+}
+
+/**
+ * La fila de actualizacion de "Acerca de".
+ *
+ * La comprobacion de fondo ya corre sola al arrancar; este boton existe para
+ * cuando alguien no quiere esperar. Deja el paquete descargado igual, asi que
+ * pulsarlo nunca empeora nada.
+ */
+function FilaActualizacion() {
+  const [buscando, setBuscando] = createSignal(false);
+  const [alDia, setAlDia] = createSignal(false);
+
+  const buscar = async () => {
+    setBuscando(true);
+    setAlDia(false);
+    try {
+      const encontrada = await api.updateCheckNow();
+      setUpdateReady(encontrada);
+      setAlDia(!encontrada);
+    } catch (e) {
+      avisarError(motivo(e, "No se pudo comprobar si hay una versión nueva."));
+    } finally {
+      setBuscando(false);
+    }
+  };
+
+  const instalar = async () => {
+    setInstalandoUpdate(true);
+    setSettingsOpen(false);
+    // Ver `Actualizacion.tsx`: al velo hay que darle tiempo de escena antes de
+    // soltar el instalador, o el cierre parece un cuelgue.
+    await new Promise((r) => setTimeout(r, 4000));
+    try {
+      await api.updateInstall();
+    } catch (e) {
+      console.error(e);
+      setInstalandoUpdate(false);
+    }
+  };
+
+  return (
+    <Fila
+      titulo="Actualizaciones"
+      nota={
+        updateReady()
+          ? `La versión ${updateReady()!.version} está descargada y verificada. Se instala en unos segundos y la aplicación vuelve sola.`
+          : updateProgress()
+            ? `Descargando la ${updateProgress()!.version} en segundo plano · ${updateProgress()!.percent}%`
+            : alDia()
+              ? "Estás en la última versión."
+              : "Se comprueban solas al abrir y se descargan en segundo plano. Instalar lo decides tú."
+      }
+    >
+      <Show
+        when={updateReady()}
+        fallback={
+          <button
+            class="rounded-full border border-white/10 bg-white/10 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15 disabled:opacity-40"
+            disabled={buscando() || !!updateProgress()}
+            onClick={buscar}
+          >
+            {buscando() ? "Buscando…" : "Buscar ahora"}
+          </button>
+        }
+      >
+        <button
+          class="rounded-full border border-[var(--accent)]/40 bg-[var(--accent)]/20 px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[var(--accent)]/30"
+          onClick={instalar}
+        >
+          Instalar v{updateReady()!.version}
+        </button>
+      </Show>
+    </Fila>
   );
 }
 
@@ -279,6 +359,7 @@ export function SettingsDialog() {
               <Fila titulo="MyGlossMusic" nota="Reproductor de YouTube Music nativo. Rust + Tauri + SolidJS.">
                 <span class="font-mono text-[12px] text-white/60">{version()}</span>
               </Fila>
+              <FilaActualizacion />
               <Fila
                 titulo="Extractor"
                 nota={
