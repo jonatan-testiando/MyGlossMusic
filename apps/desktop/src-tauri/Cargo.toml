@@ -1,6 +1,6 @@
 [package]
 name = "myglossmusic"
-version = "0.1.0"
+version = "0.1.4"
 description = "MyGlossMusic - reproductor de YouTube Music nativo"
 edition = "2021"
 
