@@ -193,20 +193,42 @@ impl Queue {
 
     /// La pista que sonara despues, para precargarla sin alterar el estado.
     pub fn peek_next(&self) -> Option<&TrackInfo> {
-        if self.items.is_empty() {
-            return None;
+        self.peek_ahead(1).into_iter().next()
+    }
+
+    /// Las `n` pistas que sonaran despues, en orden, sin alterar el estado.
+    ///
+    /// Generaliza [`Self::peek_next`] para poder precargar mas de una. Respeta
+    /// el orden aleatorio y el modo de repeticion, y nunca devuelve la pista
+    /// actual dos veces: con `Repeat::All` y una cola corta se daria la vuelta
+    /// entera, y precargar lo que ya esta sonando no sirve de nada.
+    pub fn peek_ahead(&self, n: usize) -> Vec<&TrackInfo> {
+        if self.items.is_empty() || n == 0 {
+            return Vec::new();
         }
         if self.repeat == Repeat::One {
-            return self.current();
+            return self.current().into_iter().collect();
         }
+        let total = self.items.len();
         let pos = self.position_in_order();
-        if pos + 1 < self.items.len() {
-            self.items.get(self.nth_in_order(pos + 1))
-        } else if self.repeat == Repeat::All {
-            self.items.get(self.nth_in_order(0))
-        } else {
-            None
+        let mut out = Vec::with_capacity(n.min(total));
+        for salto in 1..=n {
+            let p = pos + salto;
+            let p = if p < total {
+                p
+            } else if self.repeat == Repeat::All {
+                p % total
+            } else {
+                break;
+            };
+            if p == pos {
+                break;
+            }
+            if let Some(t) = self.items.get(self.nth_in_order(p)) {
+                out.push(t);
+            }
         }
+        out
     }
 
     /// Posicion de la pista actual dentro del orden efectivo.
@@ -323,6 +345,32 @@ mod tests {
     fn prev_se_queda_al_principio() {
         let mut q = queue_of(3);
         assert_eq!(q.prev().unwrap().video_id, "0");
+    }
+
+    #[test]
+    fn peek_ahead_da_las_siguientes_en_orden() {
+        let mut q = queue_of(4);
+        q.jump_to(1);
+        let v: Vec<&str> = q.peek_ahead(2).iter().map(|t| t.video_id.as_str()).collect();
+        assert_eq!(v, vec!["2", "3"]);
+        assert_eq!(q.index(), 1, "peek_ahead no debe mover la cola");
+    }
+
+    #[test]
+    fn peek_ahead_se_para_al_final_sin_repeticion() {
+        let mut q = queue_of(3);
+        q.jump_to(2);
+        assert!(q.peek_ahead(2).is_empty());
+    }
+
+    #[test]
+    fn peek_ahead_da_la_vuelta_con_repeat_all_sin_repetir_la_actual() {
+        let mut q = queue_of(2);
+        q.set_repeat(Repeat::All);
+        q.jump_to(1);
+        let v: Vec<&str> = q.peek_ahead(3).iter().map(|t| t.video_id.as_str()).collect();
+        // Solo "0": la siguiente vuelta seria la actual otra vez.
+        assert_eq!(v, vec!["0"]);
     }
 
     #[test]

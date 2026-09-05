@@ -63,8 +63,47 @@ struct Prepared {
     mime: Option<String>,
     meta: Option<TrackInfo>,
     duration_ms: Option<u64>,
+    /// Lo que devolvio InnerTube para esta pista, si se llego a pedir.
+    ///
+    /// La precarga ya paga esa peticion, asi que guardarla aqui hace que
+    /// arrancar una pista precargada no toque la red **en absoluto**. Antes se
+    /// volvia a resolver aunque la descarga estuviera hecha: ~760 ms de espera
+    /// en cada cambio de cancion, tambien en el automatico.
+    resolved: Option<ytm_source::Resolved>,
 }
 use ytm_source::{InnerTube, TrackInfo};
+
+/// Cuantas pistas se dejan listas por delante de la que suena.
+///
+/// Dos y no una: con una sola, dos "siguiente" seguidos —o un salto justo
+/// despues de un cambio automatico— vuelven a pagar el arranque en frio. Subir
+/// mas tampoco sale gratis: cada precarga es un proceso de yt-dlp y una pista
+/// entera bajada a disco.
+const PRECARGA: usize = 2;
+
+/// Registro de precargas: lo que ya esta listo y lo que se esta trayendo.
+///
+/// Los dos campos van bajo el MISMO candado a proposito, y `en_curso` guarda la
+/// tarea, no solo el id, para poder ESPERARLA.
+///
+/// # Que evita esto
+///
+/// Que dos yt-dlp escriban el mismo archivo. Pasa por dos caminos: dos
+/// precargas de la misma pista, y —el peligroso— saltar a una pista que se
+/// esta precargando justo en ese momento. En los dos casos el segundo yt-dlp
+/// arranca borrando los restos `<id>.*` del primero (`purge_partial`, en
+/// `ytm-source/src/ytdlp.rs`). Con `--no-part` los dos apuntan al mismo
+/// nombre, y en Windows eso ni siquiera falla limpio: da un error de comparticion
+/// y la pista acaba cayendo al acunador, con sus 25 s de espera.
+///
+/// Antes el riesgo era pequeno porque la precarga solo se disparaba al arrancar
+/// una pista. Ahora se rearma tambien al cambiar el aleatorio o la cola, y son
+/// dos pistas por delante en vez de una, asi que hay que cerrarlo de verdad.
+#[derive(Default)]
+struct Precargas {
+    listas: HashMap<String, Prepared>,
+    en_curso: HashMap<String, tokio::task::JoinHandle<()>>,
+}
 
 /// Factor de volumen que iguala una pista con las demas.
 ///
@@ -255,7 +294,7 @@ impl Engine {
             cache_limit: cache::DEFAULT_LIMIT,
             normalizar: true,
             ganancia: 1.0,
-            prepared: Arc::new(Mutex::new(HashMap::new())),
+            prepared: Arc::new(Mutex::new(Precargas::default())),
             partial_warned: false,
             queue_rev: 0,
         };
@@ -279,50 +318,120 @@ impl Engine {
     }
 }
 
-/// Obtiene la fuente de audio de una pista: proveedor si lo hay, InnerTube si no.
-async fn prepare(
-    provider: Option<SourceProvider>,
+/// Fuente de audio a traves del proveedor del anfitrion (yt-dlp o el acunador).
+///
+/// # Por que ya no recibe la respuesta de InnerTube
+///
+/// Antes esta funcion tomaba el stream de InnerTube como respaldo, lo que
+/// obligaba a resolver ANTES de llamarla. Pero cuando el proveedor funciona —el
+/// caso normal— ese stream no se usa para nada del audio: solo aportaba el
+/// `itag`, y el `itag` es el ultimo criterio de [`decode::extension_for`], por
+/// detras del mime, que yt-dlp siempre da. Separarlas permite lanzar las dos
+/// peticiones a la vez. El respaldo vive ahora en el sitio que decide,
+/// [`preparar`].
+async fn prepare_provider(
+    provider: &SourceProvider,
     http: reqwest::Client,
     video_id: &str,
-    fallback: Option<&ytm_source::AudioStream>,
 ) -> Result<Prepared> {
-    if let Some(p) = provider {
-        match p(video_id.to_string(), cache::cache_dir()).await {
-            Ok(Provided::Url { url, size, mime }) => {
-                let itag = param(&url, "itag")
-                    .and_then(|v| v.parse().ok())
-                    .or(fallback.map(|f| f.itag))
-                    .unwrap_or(0);
-                let mime = mime.or_else(|| param(&url, "mime").map(|m| m.replace("%2F", "/")));
-                let size = size.or_else(|| param(&url, "clen").and_then(|v| v.parse().ok()));
-                let path = cache::track_path(video_id, itag);
-                let cache = cache::TrackCache::start(url, size, path, http)?;
-                return Ok(Prepared { cache, itag, mime, meta: None, duration_ms: None });
-            }
-            Ok(Provided::External { path, size, mime, done, title, author, thumbnail, duration_ms }) => {
-                let cache = cache::TrackCache::start_external(path, size, done)?;
-                let meta = title.is_some().then(|| TrackInfo {
-                    video_id: video_id.to_string(),
-                    title,
-                    author,
-                    thumbnail,
-                    duration_ms,
-                });
-                return Ok(Prepared {
-                    cache,
-                    itag: fallback.map(|f| f.itag).unwrap_or(0),
-                    mime,
-                    meta,
-                    duration_ms,
-                });
-            }
-            Err(e) => tracing::warn!(error = %e, "el proveedor fallo; se usa InnerTube"),
+    match provider(video_id.to_string(), cache::cache_dir()).await? {
+        Provided::Url { url, size, mime } => {
+            let itag = param(&url, "itag").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let mime = mime.or_else(|| param(&url, "mime").map(|m| m.replace("%2F", "/")));
+            let size = size.or_else(|| param(&url, "clen").and_then(|v| v.parse().ok()));
+            let path = cache::track_path(video_id, itag);
+            let cache = cache::TrackCache::start(url, size, path, http)?;
+            Ok(Prepared { cache, itag, mime, meta: None, duration_ms: None, resolved: None })
+        }
+        Provided::External { path, size, mime, done, title, author, thumbnail, duration_ms } => {
+            let cache = cache::TrackCache::start_external(path, size, done)?;
+            let meta = title.is_some().then(|| TrackInfo {
+                video_id: video_id.to_string(),
+                title,
+                author,
+                thumbnail,
+                duration_ms,
+            });
+            Ok(Prepared { cache, itag: 0, mime, meta, duration_ms, resolved: None })
         }
     }
-    let f = fallback.context("sin proveedor de audio y sin URL de InnerTube")?;
+}
+
+/// Fuente de audio a partir de la URL directa que dio InnerTube.
+fn prepare_stream(
+    http: reqwest::Client,
+    video_id: &str,
+    f: &ytm_source::AudioStream,
+) -> Result<Prepared> {
     let path = cache::track_path(video_id, f.itag);
     let cache = cache::TrackCache::start(f.url.clone(), f.size_bytes, path, http)?;
-    Ok(Prepared { cache, itag: f.itag, mime: None, meta: None, duration_ms: None })
+    Ok(Prepared { cache, itag: f.itag, mime: None, meta: None, duration_ms: None, resolved: None })
+}
+
+/// Deja lista una pista: resuelve y consigue el audio **a la vez**.
+///
+/// # Por que en paralelo
+///
+/// Son dos esperas independientes que antes iban una detras de otra. Medido el
+/// 2026-09-05: la cascada de InnerTube tarda ~240 ms y yt-dlp entre 1,5 y 2,6 s
+/// en decidir formato y ruta. En serie eso es la suma; a la vez, el maximo. La
+/// respuesta de InnerTube llega de sobra antes de que haya un solo byte que
+/// decodificar, asi que no se pierde ni el volumen normalizado ni la duracion.
+///
+/// InnerTube se pide SIEMPRE aunque el proveedor vaya a ganar, porque es lo
+/// unico que trae `loudness_db`, y sin el no hay normalizacion de volumen.
+///
+/// Devuelve tambien lo que dijo InnerTube: `None` si fallo (no es fatal
+/// mientras el proveedor entregue audio).
+async fn preparar(
+    provider: Option<&SourceProvider>,
+    innertube: &InnerTube,
+    http: reqwest::Client,
+    video_id: &str,
+) -> Result<Prepared> {
+    let Some(provider) = provider else {
+        // Sin proveedor, InnerTube es la unica fuente y no hay nada que
+        // paralelizar.
+        let r = ytm_source::resolve(innertube, video_id).await?;
+        let mut prep = prepare_stream(http, video_id, &r.audio)?;
+        prep.resolved = Some(r);
+        return Ok(prep);
+    };
+
+    let (resuelto, del_proveedor) = tokio::join!(
+        ytm_source::resolve(innertube, video_id),
+        prepare_provider(provider, http.clone(), video_id),
+    );
+
+    let resuelto = match resuelto {
+        Ok(r) => Some(r),
+        Err(e) => {
+            tracing::warn!(error = %e, "InnerTube no resolvio; se sigue con el proveedor");
+            None
+        }
+    };
+
+    match del_proveedor {
+        Ok(mut prep) => {
+            // El `itag` de InnerTube, si el proveedor no traia uno. Es el
+            // ultimo criterio de [`decode::extension_for`], pero es gratis
+            // conservarlo ahora que la respuesta ya esta aqui.
+            if prep.itag == 0 {
+                if let Some(r) = &resuelto {
+                    prep.itag = r.audio.itag;
+                }
+            }
+            prep.resolved = resuelto;
+            Ok(prep)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "el proveedor fallo; se usa InnerTube");
+            let r = resuelto.context("sin proveedor de audio y sin URL de InnerTube")?;
+            let mut prep = prepare_stream(http, video_id, &r.audio)?;
+            prep.resolved = Some(r);
+            Ok(prep)
+        }
+    }
 }
 
 /// Lee un parametro de una URL de googlevideo.
@@ -382,9 +491,9 @@ struct Inner {
     normalizar: bool,
     /// Correccion de la pista actual, ya en factor lineal. Ver [`ganancia_de`].
     ganancia: f32,
-    /// Pistas precargadas, por id. Reproducir una que ya esta aqui reutiliza la
-    /// descarga en curso en vez de abrir otra sobre el mismo archivo.
-    prepared: Arc<Mutex<HashMap<String, Prepared>>>,
+    /// Pistas precargadas y en curso de precarga. Reproducir una que ya esta
+    /// aqui reutiliza la descarga en vez de abrir otra sobre el mismo archivo.
+    prepared: Arc<Mutex<Precargas>>,
     /// Ya se aviso de que esta pista quedo incompleta.
     partial_warned: bool,
     /// Revision del contenido de la cola (ver [`PlaybackState::queue_rev`]).
@@ -435,9 +544,11 @@ impl Inner {
             }
             Command::SetUpNext { tracks } => {
                 // No se llama a `start_current()`: la pista actual sigue
-                // sonando. Solo cambia lo que viene detras.
+                // sonando. Solo cambia lo que viene detras — y por eso hay que
+                // rearmar la precarga: la que hubiera ya no es la siguiente.
                 self.queue_rev += 1;
                 self.queue.set_up_next(tracks);
+                self.prefetch_ahead();
                 self.publish();
             }
             Command::PlayNext(t) => {
@@ -448,6 +559,7 @@ impl Inner {
                 if vacia {
                     self.start_current().await?;
                 } else {
+                    self.prefetch_ahead();
                     self.publish();
                 }
             }
@@ -457,6 +569,10 @@ impl Inner {
                 self.queue.push(t);
                 if was_empty {
                     self.start_current().await?;
+                } else {
+                    // Con la cola agotada, lo que se acaba de anadir ES la
+                    // siguiente: sin esto sonaria en frio.
+                    self.prefetch_ahead();
                 }
             }
             Command::JumpTo(i) => {
@@ -494,8 +610,17 @@ impl Inner {
                 self.volume = v.clamp(0.0, 2.0);
                 self.aplicar_volumen();
             }
-            Command::SetRepeat(r) => self.queue.set_repeat(r),
-            Command::SetShuffle(on) => self.queue.set_shuffle(on),
+            Command::SetRepeat(r) => {
+                // Cambia cual es la siguiente al final de la cola, y `One` la
+                // convierte en la actual.
+                self.queue.set_repeat(r);
+                self.prefetch_ahead();
+            }
+            Command::SetShuffle(on) => {
+                // Rebaraja: la pista precargada deja de ser la siguiente.
+                self.queue.set_shuffle(on);
+                self.prefetch_ahead();
+            }
             Command::SetCacheLimit(bytes) => {
                 self.cache_limit = bytes;
                 self.podar_cache();
@@ -525,32 +650,31 @@ impl Inner {
         self.player.clear();
         self.publish();
 
-        // InnerTube da titulo, portada y duracion. Si falla y hay proveedor, no
-        // es fatal: yt-dlp trae sus propios metadatos.
-        let resolved = match ytm_source::resolve(&self.innertube, &track.video_id).await {
-            Ok(r) => Some(r),
-            Err(e) if self.source_provider.is_some() => {
-                tracing::warn!(error = %e, "InnerTube no resolvio; se sigue con el proveedor");
-                None
-            }
-            Err(e) => return Err(e.context(format!("no se pudo resolver {}", track.video_id))),
-        };
+        // Si esta pista se estaba precargando, se ESPERA a esa precarga en vez
+        // de lanzar una segunda. Ver [`Precargas`]. Esperar no cuesta tiempo de
+        // mas: el trabajo ya empezo antes, asi que solo puede acabar antes.
+        let en_vuelo = self.prepared.lock().unwrap().en_curso.remove(&track.video_id);
+        if let Some(tarea) = en_vuelo {
+            let _ = tarea.await;
+        }
 
         // Si la precarga ya la dejo lista (o en curso), se reutiliza: arrancar
-        // una segunda descarga sobre el mismo archivo lo corromperia.
-        let already = self.prepared.lock().unwrap().remove(&track.video_id);
+        // una segunda descarga sobre el mismo archivo lo corromperia. Y como la
+        // precarga guarda tambien la respuesta de InnerTube, este camino no
+        // toca la red: es el cambio de cancion instantaneo.
+        let already = self.prepared.lock().unwrap().listas.remove(&track.video_id);
         let prepared = match already {
             Some(p) if p.cache.error().is_none() => p,
-            _ => {
-                prepare(
-                    self.source_provider.clone(),
-                    self.http.clone(),
-                    &track.video_id,
-                    resolved.as_ref().map(|r| &r.audio),
-                )
-                .await?
-            }
+            _ => preparar(
+                self.source_provider.as_ref(),
+                &self.innertube,
+                self.http.clone(),
+                &track.video_id,
+            )
+            .await
+            .with_context(|| format!("no se pudo resolver {}", track.video_id))?,
         };
+        let resolved = prepared.resolved.clone();
 
         // Metadatos: InnerTube primero, yt-dlp de respaldo.
         if track.title.is_none() {
@@ -606,7 +730,7 @@ impl Inner {
         self.loading = false;
         self.armed.store(true, Ordering::Release);
 
-        self.prefetch_next();
+        self.prefetch_ahead();
         self.podar_cache();
         self.rellenar_metadatos(&track.video_id).await;
         Ok(())
@@ -661,31 +785,57 @@ impl Inner {
         tokio::task::spawn_blocking(move || cache::prune(limite, &protegidos));
     }
 
-    /// Deja lista la siguiente pista en segundo plano. Los fallos se ignoran a
-    /// proposito: es una optimizacion, no una funcionalidad.
-    fn prefetch_next(&self) {
-        let Some(next) = self.queue.peek_next().cloned() else {
-            return;
+    /// Deja listas en segundo plano las [`PRECARGA`] pistas que vienen. Los
+    /// fallos se ignoran a proposito: es una optimizacion, no una funcionalidad.
+    ///
+    /// # Cuando hay que llamarla
+    ///
+    /// **Siempre que cambie cual es la siguiente pista**, no solo al arrancar
+    /// una. Ese era el fallo: se llamaba unicamente al final de
+    /// [`Self::start_current`], asi que al activar el aleatorio —que rebaraja
+    /// la cola— la pista precargada dejaba de ser la que iba a sonar y nadie
+    /// precargaba la nueva. Resultado: la primera cancion despues de darle a
+    /// aleatorio arrancaba en frio, con los segundos completos de espera.
+    fn prefetch_ahead(&self) {
+        let actual = self.queue.current().map(|t| t.video_id.clone());
+        let siguientes: Vec<String> = self
+            .queue
+            .peek_ahead(PRECARGA)
+            .into_iter()
+            .map(|t| t.video_id.clone())
+            // Repeat::One: la siguiente es la que ya esta sonando.
+            .filter(|id| Some(id) != actual.as_ref())
+            .collect();
+
+        let pendientes: Vec<String> = {
+            let mut reg = self.prepared.lock().unwrap();
+            // Lo que ya no va a sonar pronto sobra. Soltarlo no cancela nada:
+            // la descarga corre en su propia tarea y termina en la cache de
+            // disco igualmente, asi que si se vuelve a esa pista sigue barata.
+            reg.listas.retain(|id, _| siguientes.contains(id));
+            reg.en_curso.retain(|_, tarea| !tarea.is_finished());
+            siguientes
+                .into_iter()
+                .filter(|id| !reg.listas.contains_key(id) && !reg.en_curso.contains_key(id))
+                .collect()
         };
-        if Some(&next.video_id) == self.queue.current().map(|c| &c.video_id) {
-            return; // Repeat::One: ya esta en cache
-        }
-        if self.prepared.lock().unwrap().contains_key(&next.video_id) {
-            return;
-        }
-        let it = self.innertube.clone();
-        let http = self.http.clone();
-        let provider = self.source_provider.clone();
-        let prepared = Arc::clone(&self.prepared);
-        tokio::spawn(async move {
-            let resolved = ytm_source::resolve(&it, &next.video_id).await.ok();
-            match prepare(provider, http, &next.video_id, resolved.as_ref().map(|r| &r.audio)).await {
-                Ok(p) => {
-                    prepared.lock().unwrap().insert(next.video_id.clone(), p);
+
+        for id in pendientes {
+            let it = self.innertube.clone();
+            let http = self.http.clone();
+            let provider = self.source_provider.clone();
+            let registro = Arc::clone(&self.prepared);
+            let suya = id.clone();
+            let tarea = tokio::spawn(async move {
+                match preparar(provider.as_ref(), &it, http, &suya).await {
+                    Ok(p) => {
+                        registro.lock().unwrap().listas.insert(suya, p);
+                    }
+                    Err(e) => tracing::debug!(error = %e, "precarga fallida"),
                 }
-                Err(e) => tracing::debug!(error = %e, "precarga fallida"),
-            }
-        });
+            });
+            self.prepared.lock().unwrap().en_curso.insert(id, tarea);
+        }
     }
 
     async fn seek(&mut self, pos: Duration) -> Result<()> {

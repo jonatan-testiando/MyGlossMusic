@@ -77,7 +77,8 @@ pub const TV_EMBEDDED: ClientConfig = ClientConfig {
 
 /// El cliente que usa music.youtube.com de verdad. Es el que usaremos para el
 /// PLANO DE BIBLIOTECA (con cookies), donde su trafico es indistinguible del
-/// navegador. Para streams normalmente exige descifrado, asi que va el ultimo.
+/// navegador. Para streams normalmente exige descifrado, asi que va de los
+/// ultimos en [`PREFERRED`].
 pub const WEB_REMIX: ClientConfig = ClientConfig {
     id: "web_remix",
     client_name: "WEB_REMIX",
@@ -103,6 +104,8 @@ pub const MWEB: ClientConfig = ClientConfig {
 
 /// Cliente de la app de YouTube Music para iOS. Es el cliente "nativo" para
 /// contenido musical con licencia, que es justo lo que reproduce esta app.
+///
+/// Anonimo devuelve `LOGIN_REQUIRED` (medido el 2026-09-05). Ver [`PREFERRED`].
 pub const IOS_MUSIC: ClientConfig = ClientConfig {
     id: "ios_music",
     client_name: "IOS_MUSIC",
@@ -114,6 +117,8 @@ pub const IOS_MUSIC: ClientConfig = ClientConfig {
 };
 
 /// Cliente de la app de YouTube Music para Android.
+///
+/// Anonimo devuelve `LOGIN_REQUIRED` (medido el 2026-09-05). Ver [`PREFERRED`].
 pub const ANDROID_MUSIC: ClientConfig = ClientConfig {
     id: "android_music",
     client_name: "ANDROID_MUSIC",
@@ -148,8 +153,42 @@ pub const TV_SIMPLY: ClientConfig = ClientConfig {
 
 /// Orden de preferencia para reproducir. El primero que devuelva un stream
 /// usable, gana. Reordena esta lista segun lo que diga `probe`.
-pub const PREFERRED: &[ClientConfig] =
-    &[IOS_MUSIC, ANDROID_MUSIC, IOS, ANDROID_VR, ANDROID, TV_EMBEDDED, TV, MWEB, WEB_REMIX];
+///
+/// # Por que los clientes de Music van los ULTIMOS
+///
+/// Son los clientes "correctos" para contenido musical, y por eso estuvieron
+/// los primeros. Pero desde que exigen sesion no devuelven nada util anonimos:
+/// medido el 2026-09-05 sobre cinco pistas (una de ellas normal de YouTube y
+/// cuatro sacadas de una playlist real de YouTube Music), `IOS_MUSIC` y
+/// `ANDROID_MUSIC` contestaron `LOGIN_REQUIRED` con cero formatos las cinco
+/// veces, e `IOS` resolvio siempre a la tercera.
+///
+/// Preguntarles primero no es gratis: son dos peticiones de red de ~260 ms cada
+/// una que SIEMPRE fallan, es decir **~520 ms de retraso en cada pista**, tanto
+/// al arrancar una cancion como al precargar la siguiente. Se conservan al
+/// final de la lista a proposito: el dia que haya sesion volveran a ser los
+/// mejores, y entonces basta con volver a subirlos.
+///
+/// # Por que `ANDROID` va antes que `ANDROID_VR`
+///
+/// Porque el segundo se ha vuelto irregular: `ios` y `android` resolvieron las
+/// tres pistas del sondeo, `android_vr` solo una (`LOGIN_REQUIRED` en las otras
+/// dos). El segundo puesto tiene que ser el que mas probabilidades tenga de
+/// acertar cuando el primero falle; si no, se paga otra peticion en balde.
+///
+/// Vuelve a medirlo con `ytm-spike probe <videoId>` antes de tocar el orden: el
+/// propio comando dice al final por cuales empezar.
+pub const PREFERRED: &[ClientConfig] = &[
+    IOS,
+    ANDROID,
+    ANDROID_VR,
+    TV_EMBEDDED,
+    TV,
+    MWEB,
+    WEB_REMIX,
+    IOS_MUSIC,
+    ANDROID_MUSIC,
+];
 
 /// Todos los clientes conocidos, para el modo `probe`.
 pub const ALL: &[ClientConfig] = &[
